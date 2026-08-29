@@ -17,8 +17,8 @@ jobs:
         with:
           node-version: "22"
           registry-url: "https://registry.npmjs.org"
-      # Trusted publishing needs npm CLI >= 11.5.1 (Node 22 image may ship older).
-      - run: npm install -g npm@latest
+      # Install with Node 22's bundled npm. npm@latest's `npm ci` rejects this
+      # lockfile (peer tree + hasShrinkwrap) even with --omit=peer.
       - run: npm ci --omit=peer
       # Factory load (npm run test:load) needs `pi` on PATH; not available here.
       - run: npm run test:unit
@@ -31,4 +31,6 @@ jobs:
             echo "Skip: $NAME@$VERSION already on npm"
             exit 0
           fi
+          # Trusted publishing needs npm CLI >= 11.5.1 (Node 22 image may ship older).
+          npm install -g npm@latest
           npm publish --access public --provenance
