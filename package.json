@@ -1,0 +1,34 @@
+{
+  "name": "@kvidzibo/pi-web-access",
+  "version": "0.1.0",
+  "description": "Pi package: keyless Exa/DuckDuckGo search + local URL fetch",
+  "author": "Tomas Rackauskas",
+  "keywords": ["pi-package"],
+  "license": "MIT",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kvidzibo/pi-web-access.git"
+  },
+  "homepage": "https://github.com/kvidzibo/pi-web-access#readme",
+  "bugs": {
+    "url": "https://github.com/kvidzibo/pi-web-access/issues"
+  },
+  "pi": {
+    "extensions": ["./index.ts"]
+  },
+  "scripts": {
+    "test": "npm run test:unit && npm run test:load",
+    "test:unit": "node --test --experimental-strip-types tests/*.test.ts",
+    "test:load": "node --test --experimental-strip-types load.test.ts"
+  },
+  "dependencies": {
+    "@mozilla/readability": "^0.6.0",
+    "linkedom": "^0.16.0",
+    "turndown": "^7.2.0"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "typebox": "*"
+  }
+}

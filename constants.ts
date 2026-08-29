@@ -1,0 +1,13 @@
+export const MAX_INLINE_CHARS = 30_000;
+export const MAX_FETCH_BYTES = 2_000_000;
+export const MAX_REDIRECTS = 5;
+export const FETCH_TIMEOUT_MS = 30_000;
+export const SEARCH_TIMEOUT_MS = 30_000;
+export const CACHE_TTL_MS = 60 * 60 * 1000;
+export const CACHE_MAX_ENTRIES = 128;
+export const CACHE_MAX_BYTES = 128 * 1024 * 1024;
+export const FIND_MAX_CHARS = 20_000;
+export const CONCURRENT_FETCHES = 3;
+export const USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64; rv:128.0) Gecko/20100101 Firefox/128.0";
+export const EXA_MCP_URL = "https://mcp.exa.ai/mcp";
+export const DDG_SEARCH_URL = "https://html.duckduckgo.com/html/";
