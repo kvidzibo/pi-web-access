@@ -3,7 +3,7 @@ import { existsSync, mkdtempSync, rmSync, statSync, utimesSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { createCache, findPassages, isSafeId, selectStoredText, sliceText } from "../cache.ts";
+import { createCache, findPassages, formatRecordForModel, isSafeId, selectStoredText, sliceText } from "../cache.ts";
 
 function tempDir(): string {
 	return mkdtempSync(join(tmpdir(), "web-access-cache-"));
@@ -158,6 +158,30 @@ test("selectStoredText lists when many pages", () => {
 		],
 	}, { urlIndex: 1 });
 	assert.equal(page.text, "bbb");
+});
+
+test("formatRecordForModel caps at inlineLimit then marker", () => {
+	const id = "11111111-1111-4111-8111-111111111111";
+	const record = {
+		id,
+		createdAt: 1,
+		kind: "fetch" as const,
+		queries: [],
+		pages: [{
+			url: "https://example.com",
+			finalUrl: "https://example.com/",
+			title: "Example",
+			content: "x".repeat(500),
+			contentType: "text/plain",
+		}],
+	};
+	const limit = 80;
+	const out = formatRecordForModel(record, limit);
+	const marker = `\n\n[truncated; get_search_content responseId=${id}]`;
+	assert.equal(out.endsWith(marker), true);
+	assert.equal(out.length, limit + marker.length);
+	assert.equal(out.slice(0, limit).includes("truncated"), false);
+	assert.ok(formatRecordForModel(record, 10_000).length < 10_000);
 });
 
 test("rejects unsafe ids", () => {
