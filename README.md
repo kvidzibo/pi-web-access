@@ -12,16 +12,14 @@ Pi package. Keyless web search + local URL fetch. No GitHub clone, PDF, video, c
 
 ## Install
 
-Git (after the repo is published):
+```bash
+pi install npm:@kvidzibo/pi-web-access
+```
+
+Git:
 
 ```bash
 pi install git:github.com/kvidzibo/pi-web-access@v0.1.0
-```
-
-npm (after publish):
-
-```bash
-pi install npm:@kvidzibo/pi-web-access
 ```
 
 Local checkout — Pi adds the path only; it does **not** run `npm install` for local sources:
@@ -59,5 +57,5 @@ WEB_ACCESS_LIVE=1 node --test --experimental-strip-types tests/live.test.ts
 
 ## Publish
 
-- GitHub: `kvidzibo/pi-web-access` (not pushed yet)
-- npm: `@kvidzibo/pi-web-access` (gallery crawls the `pi-package` keyword; not published yet)
+- GitHub: `kvidzibo/pi-web-access`
+- npm: `@kvidzibo/pi-web-access` (gallery crawls the `pi-package` keyword)
