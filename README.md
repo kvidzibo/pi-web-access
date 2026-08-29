@@ -1,8 +1,6 @@
 # pi-web-access
 
-Pi package. Keyless web search + local URL fetch.
-
-No GitHub clone, PDF, video, curator UI, or API keys.
+Pi package. Keyless web search + local URL fetch. No GitHub clone, PDF, video, curator UI, or API keys.
 
 | tool | job |
 |---|---|
