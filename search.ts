@@ -1,4 +1,5 @@
-import { DDG_SEARCH_URL, EXA_MCP_URL, SEARCH_TIMEOUT_MS, USER_AGENT } from "./constants.ts";
+import { DDG_SEARCH_URL, EXA_MCP_URL, MAX_DOMAIN_FILTERS, MAX_QUERIES, MAX_QUERY_CHARS, MAX_SEARCH_BODY_BYTES, SEARCH_TIMEOUT_MS, USER_AGENT } from "./constants.ts";
+import { readTextLimited } from "./fetch.ts";
 import { parseDdgHtml, parseExaMcpBody } from "./html.ts";
 import type { QueryResult, RecencyFilter, SearchHit, SearchProvider } from "./types.ts";
 
@@ -16,7 +17,10 @@ export function normalizeQueries(query?: unknown, queries?: unknown): string[] {
 	for (const item of raw) {
 		if (typeof item !== "string") continue;
 		const trimmed = item.trim();
-		if (trimmed && !out.includes(trimmed)) out.push(trimmed);
+		if (!trimmed) continue;
+		if (trimmed.length > MAX_QUERY_CHARS) throw new Error(`Query too long (max ${MAX_QUERY_CHARS} characters)`);
+		if (!out.includes(trimmed)) out.push(trimmed);
+		if (out.length >= MAX_QUERIES) break;
 	}
 	return out;
 }
@@ -40,12 +44,17 @@ export function normalizeRecency(value: unknown): RecencyFilter | undefined {
 
 export function normalizeDomainFilters(domainFilter: string[] | undefined): { allowed: string[]; blocked: string[] } {
 	const filters = { allowed: [] as string[], blocked: [] as string[] };
+	let count = 0;
 	for (const raw of domainFilter ?? []) {
+		if (count >= MAX_DOMAIN_FILTERS) break;
 		const blocked = raw.trim().startsWith("-");
 		const domain = normalizeDomain(blocked ? raw.trim().slice(1) : raw);
 		if (!domain) continue;
 		const target = blocked ? filters.blocked : filters.allowed;
-		if (!target.includes(domain)) target.push(domain);
+		if (!target.includes(domain)) {
+			target.push(domain);
+			count += 1;
+		}
 	}
 	return filters;
 }
@@ -126,7 +135,7 @@ export async function searchExa(query: string, options: SearchOptions = {}): Pro
 		}),
 		signal: withTimeout(options.signal, SEARCH_TIMEOUT_MS),
 	});
-	const body = await response.text();
+	const body = await readTextLimited(response, MAX_SEARCH_BODY_BYTES);
 	if (!response.ok) {
 		if (response.status === 429) throw new Error(`Exa MCP rate limit (429): ${body.slice(0, 200)}`);
 		throw new Error(`Exa MCP error ${response.status}: ${body.slice(0, 300)}`);
@@ -148,7 +157,7 @@ export async function searchDuckDuckGo(query: string, options: SearchOptions = {
 		},
 		signal: withTimeout(options.signal, SEARCH_TIMEOUT_MS),
 	});
-	const body = await response.text();
+	const body = await readTextLimited(response, MAX_SEARCH_BODY_BYTES);
 	if (!response.ok) throw new Error(`DuckDuckGo search error ${response.status}: ${body.slice(0, 300)}`);
 	const parsed = parseDdgHtml(body);
 	if (parsed.length === 0) throw new Error("DuckDuckGo returned no parseable results");

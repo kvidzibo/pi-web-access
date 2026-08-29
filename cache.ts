@@ -85,6 +85,8 @@ export function createCache(dir: string, limits: Partial<CacheLimits> = {}) {
 		return join(dir, `${id}.json`);
 	}
 
+	prune();
+
 	function listEntries(): Array<{ id: string; path: string; createdAt: number; bytes: number }> {
 		let names: string[];
 		try {
@@ -213,13 +215,25 @@ export function formatQuery(query: QueryResult): string {
 
 export function formatRecordForModel(record: StoredRecord, inlineLimit = MAX_INLINE_CHARS): string {
 	const parts: string[] = [`responseId: ${record.id}`];
-	for (const query of record.queries) parts.push(formatQuery(query));
+	let remaining = inlineLimit;
+	const push = (chunk: string): boolean => {
+		if (remaining <= 0) return false;
+		if (chunk.length <= remaining) {
+			parts.push(chunk);
+			remaining -= chunk.length;
+			return true;
+		}
+		parts.push(`${chunk.slice(0, remaining)}\n\n[truncated; get_search_content responseId=${record.id}]`);
+		remaining = 0;
+		return false;
+	};
+	for (const query of record.queries) {
+		if (!push(formatQuery(query))) return parts.join("\n\n");
+	}
 	for (const page of record.pages) {
 		const body = page.error || page.content;
-		const sliced = body.length > inlineLimit
-			? `${body.slice(0, inlineLimit)}\n\n[truncated ${body.length - inlineLimit} chars; get_search_content responseId=${record.id} url=${page.url}]`
-			: body;
-		parts.push(`# ${page.title || page.url}\nURL: ${page.finalUrl || page.url}\n\n${sliced}`);
+		const header = `# ${page.title || page.url}\nURL: ${page.finalUrl || page.url}\n\n`;
+		if (!push(`${header}${body}`)) return parts.join("\n\n");
 	}
 	return parts.join("\n\n");
 }
@@ -251,13 +265,15 @@ function pickQuery(queries: QueryResult[], query?: string, queryIndex?: number):
 function locate(text: string, needle: string, mode: FindMode): Array<{ index: number; context: string }> {
 	const hits: Array<{ index: number; context: string }> = [];
 	if (mode === "fuzzy") {
-		const hay = collapse(text.toLowerCase());
+		const hay = collapseWithMap(text.toLowerCase());
 		const find = collapse(needle.toLowerCase());
 		let from = 0;
-		while (from < hay.length) {
-			const index = hay.indexOf(find, from);
+		while (from < hay.text.length) {
+			const index = hay.text.indexOf(find, from);
 			if (index < 0) break;
-			hits.push({ index, context: contextAround(text, index, find.length) });
+			const originalIndex = hay.map[index] ?? index;
+			const originalEnd = hay.map[index + find.length - 1] ?? originalIndex;
+			hits.push({ index: originalIndex, context: contextAround(text, originalIndex, originalEnd - originalIndex + 1) });
 			from = index + Math.max(find.length, 1);
 			if (hits.length >= 20) break;
 		}
@@ -277,7 +293,28 @@ function locate(text: string, needle: string, mode: FindMode): Array<{ index: nu
 }
 
 function collapse(value: string): string {
-	return value.replace(/\s+/g, " ");
+	return collapseWithMap(value).text;
+}
+
+function collapseWithMap(value: string): { text: string; map: number[] } {
+	const chars: string[] = [];
+	const map: number[] = [];
+	let prevSpace = false;
+	for (let i = 0; i < value.length; i++) {
+		const space = /\s/.test(value[i]);
+		if (space) {
+			if (!prevSpace && chars.length > 0) {
+				chars.push(" ");
+				map.push(i);
+			}
+			prevSpace = true;
+			continue;
+		}
+		chars.push(value[i]);
+		map.push(i);
+		prevSpace = false;
+	}
+	return { text: chars.join(""), map };
 }
 
 function contextAround(text: string, index: number, length: number): string {

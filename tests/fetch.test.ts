@@ -55,3 +55,21 @@ test("rejects pdf content type", async () => {
 	assert.match(page.error ?? "", /Unsupported content type/);
 });
 
+test("cancels unused pdf body", async () => {
+	let cancelled = false;
+	const body = new ReadableStream({
+		start(controller) {
+			controller.enqueue(new TextEncoder().encode("%PDF"));
+		},
+		cancel() {
+			cancelled = true;
+		},
+	});
+	const page = await fetchPage("https://example.com/doc.pdf", {
+		lookup: publicLookup,
+		fetch: async () => new Response(body, { status: 200, headers: { "content-type": "application/pdf" } }),
+	});
+	assert.match(page.error ?? "", /Unsupported content type/);
+	assert.equal(cancelled, true);
+});
+

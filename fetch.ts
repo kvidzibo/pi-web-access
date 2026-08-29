@@ -1,6 +1,6 @@
-import { CONCURRENT_FETCHES, FETCH_TIMEOUT_MS, MAX_FETCH_BYTES, USER_AGENT } from "./constants.ts";
+import { CONCURRENT_FETCHES, FETCH_TIMEOUT_MS, MAX_FETCH_BYTES, MAX_URLS, MAX_URL_CHARS, USER_AGENT } from "./constants.ts";
 import { htmlToReadable } from "./html.ts";
-import { fetchRemoteUrl, type Lookup } from "./ssrf.ts";
+import { cancelBody, fetchRemoteUrl, type Lookup } from "./ssrf.ts";
 import type { FetchMode, PageResult } from "./types.ts";
 
 const TEXT_TYPES = /^(text\/|application\/(json|xml|javascript|x-www-form-urlencoded|xhtml\+xml))/i;
@@ -19,7 +19,10 @@ export function normalizeUrls(url?: unknown, urls?: unknown): string[] {
 	for (const item of raw) {
 		if (typeof item !== "string") continue;
 		const trimmed = item.trim();
-		if (trimmed && !out.includes(trimmed)) out.push(trimmed);
+		if (!trimmed) continue;
+		if (trimmed.length > MAX_URL_CHARS) throw new Error(`URL too long (max ${MAX_URL_CHARS} characters)`);
+		if (!out.includes(trimmed)) out.push(trimmed);
+		if (out.length >= MAX_URLS) break;
 	}
 	return out;
 }
@@ -50,6 +53,7 @@ export async function fetchPage(url: string, options: FetchPageOptions = {}): Pr
 		});
 		const contentType = response.headers.get("content-type") || "";
 		if (!response.ok) {
+			await cancelBody(response);
 			return {
 				url,
 				finalUrl: finalUrl.toString(),
@@ -60,6 +64,7 @@ export async function fetchPage(url: string, options: FetchPageOptions = {}): Pr
 			};
 		}
 		if (isBinaryType(contentType)) {
+			await cancelBody(response);
 			return {
 				url,
 				finalUrl: finalUrl.toString(),

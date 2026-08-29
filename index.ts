@@ -3,7 +3,7 @@ import { join } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { createCache, findPassages, formatRecordForModel, selectStoredText, sliceText } from "./cache.ts";
-import { MAX_INLINE_CHARS } from "./constants.ts";
+import { MAX_DOMAIN_FILTERS, MAX_INLINE_CHARS, MAX_QUERIES, MAX_QUERY_CHARS, MAX_URLS, MAX_URL_CHARS } from "./constants.ts";
 import { fetchPages, normalizeMode, normalizeUrls } from "./fetch.ts";
 import { normalizeCount, normalizeProvider, normalizeQueries, normalizeRecency, searchQueries } from "./search.ts";
 import type { FindMode } from "./types.ts";
@@ -22,12 +22,12 @@ export default function webAccess(pi: ExtensionAPI) {
 			"After web_search, use get_search_content with the returned responseId to page stored hits or fetched pages.",
 		],
 		parameters: Type.Object({
-			query: Type.Optional(Type.String({ description: "Single search query. For research, prefer queries[]." })),
-			queries: Type.Optional(Type.Array(Type.String(), { description: "Multiple queries searched in sequence." })),
+			query: Type.Optional(Type.String({ maxLength: MAX_QUERY_CHARS, description: "Single search query. For research, prefer queries[]." })),
+			queries: Type.Optional(Type.Array(Type.String({ maxLength: MAX_QUERY_CHARS }), { maxItems: MAX_QUERIES, description: "Multiple queries searched in sequence." })),
 			numResults: Type.Optional(Type.Integer({ minimum: 1, maximum: 20, description: "Results per query (default 5, max 20)" })),
 			includeContent: Type.Optional(Type.Boolean({ description: "Also fetch readable content for result URLs" })),
 			recencyFilter: Type.Optional(Type.String({ description: "day, week, month, or year" })),
-			domainFilter: Type.Optional(Type.Array(Type.String(), { description: "Limit to domains; prefix with - to exclude" })),
+			domainFilter: Type.Optional(Type.Array(Type.String({ maxLength: 253 }), { maxItems: MAX_DOMAIN_FILTERS, description: "Limit to domains; prefix with - to exclude" })),
 			provider: Type.Optional(Type.String({ description: "auto (default), exa, or duckduckgo" })),
 		}),
 		async execute(_id, params, signal, onUpdate) {
@@ -45,7 +45,7 @@ export default function webAccess(pi: ExtensionAPI) {
 				});
 				const pages = params.includeContent === true
 					? await fetchPages(
-						uniqueUrls(results.flatMap((result) => result.hits.map((hit) => hit.url))),
+						uniqueUrls(results.flatMap((result) => result.hits.map((hit) => hit.url))).slice(0, MAX_URLS),
 						{ signal },
 					)
 					: [];
@@ -66,15 +66,15 @@ export default function webAccess(pi: ExtensionAPI) {
 		name: "fetch_content",
 		label: "Fetch Content",
 		description:
-			"Fetch HTTP(S) URL(s) from this machine and extract readable markdown. mode raw returns the textual body. Local SSRF gate blocks private/loopback/link-local IPs. No GitHub clone, video, PDF, or hosted scrapers.",
+			"Fetch HTTP(S) URL(s) from this machine and extract readable markdown. mode raw returns the textual body. Local SSRF gate blocks private/loopback/link-local/special-use IPs and pins DNS to the connecting socket. No GitHub clone, video, PDF, or hosted scrapers.",
 		promptSnippet: "Use fetch_content to read a page as markdown. Use mode raw for exact textual HTTP bodies.",
 		promptGuidelines: [
 			"Use fetch_content to read public HTTP(S) pages. Do not use it for localhost or private IPs.",
 			"After fetch_content, use get_search_content with responseId to page or search the stored full text.",
 		],
 		parameters: Type.Object({
-			url: Type.Optional(Type.String({ description: "Single URL to fetch" })),
-			urls: Type.Optional(Type.Array(Type.String(), { description: "Multiple URLs (parallel)" })),
+			url: Type.Optional(Type.String({ maxLength: MAX_URL_CHARS, description: "Single URL to fetch" })),
+			urls: Type.Optional(Type.Array(Type.String({ maxLength: MAX_URL_CHARS }), { maxItems: MAX_URLS, description: "Multiple URLs (parallel)" })),
 			mode: Type.Optional(Type.String({ description: "readable (default) or raw." })),
 		}),
 		async execute(_id, params, signal, onUpdate) {
@@ -100,7 +100,7 @@ export default function webAccess(pi: ExtensionAPI) {
 	pi.registerTool({
 		name: "get_search_content",
 		label: "Get Search Content",
-		description: "Retrieve stored content from a previous web_search or fetch_content call via responseId. Cache lives 1 hour under ~/.pi/agent/web-access-cache.",
+		description: "Retrieve stored content from a previous web_search or fetch_content call via responseId. Cache dir ~/.pi/agent/web-access-cache; entries expire after 1 hour and are pruned on extension load and on store/get.",
 		promptSnippet: "Use get_search_content after web_search or fetch_content to page or findText in stored content.",
 		promptGuidelines: [
 			"Use get_search_content with a responseId from web_search or fetch_content. Use findText to locate passages. Do not combine findText with offset or limit.",

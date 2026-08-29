@@ -15,6 +15,8 @@ import {
 test("normalizeQueries drops blanks and dupes", () => {
 	assert.deepEqual(normalizeQueries("  rust  ", ["rust", "", "go"]), ["rust", "go"]);
 	assert.deepEqual(normalizeQueries(undefined, undefined), []);
+	assert.deepEqual(normalizeQueries(undefined, ["a", "b", "c", "d", "e"]), ["a", "b", "c", "d"]);
+	assert.throws(() => normalizeQueries("x".repeat(501)), /too long/);
 });
 
 test("normalizeProvider and count", () => {

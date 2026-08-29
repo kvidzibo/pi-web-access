@@ -1,6 +1,12 @@
 export const MAX_INLINE_CHARS = 30_000;
 export const MAX_FETCH_BYTES = 2_000_000;
+export const MAX_SEARCH_BODY_BYTES = 2_000_000;
 export const MAX_REDIRECTS = 5;
+export const MAX_QUERIES = 4;
+export const MAX_URLS = 20;
+export const MAX_DOMAIN_FILTERS = 20;
+export const MAX_QUERY_CHARS = 500;
+export const MAX_URL_CHARS = 2_048;
 export const FETCH_TIMEOUT_MS = 30_000;
 export const SEARCH_TIMEOUT_MS = 30_000;
 export const CACHE_TTL_MS = 60 * 60 * 1000;

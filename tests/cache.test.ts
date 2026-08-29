@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -64,6 +64,59 @@ test("slice and find helpers", () => {
 	assert.match(findPassages(text, ["installation"], "case-insensitive"), /Installation/);
 	assert.match(findPassages(text, ["INSTALLATION"], "exact"), /No matches/);
 	assert.match(findPassages(text, ["retry timeout"], "fuzzy"), /retry timeout/);
+	const spaced = "Hello\n\tretry\t\ttimeout now";
+	const fuzzy = findPassages(spaced, ["retry timeout"], "fuzzy");
+	assert.match(fuzzy, /retry/);
+	assert.match(fuzzy, /@\d+/);
+	assert.doesNotMatch(fuzzy, /@0:/);
+});
+
+test("prunes expired files on create", () => {
+	const dir = tempDir();
+	try {
+		const first = createCache(dir, { ttlMs: 1 });
+		const stored = first.store({ kind: "fetch", queries: [], pages: [] });
+		const wait = Date.now() + 5;
+		while (Date.now() < wait) {
+			// spin
+		}
+		createCache(dir, { ttlMs: 1 });
+		assert.equal(existsSync(join(dir, `${stored.id}.json`)), false);
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("evicts when over maxBytes", () => {
+	const dir = tempDir();
+	try {
+		const cache = createCache(dir, { maxBytes: 400, maxEntries: 50, ttlMs: 60_000 });
+		const a = cache.store({
+			kind: "fetch",
+			queries: [],
+			pages: [{ url: "https://a.example", finalUrl: "https://a.example/", title: "A", content: "x".repeat(200), contentType: "text/plain" }],
+		});
+		cache.store({
+			kind: "fetch",
+			queries: [],
+			pages: [{ url: "https://b.example", finalUrl: "https://b.example/", title: "B", content: "y".repeat(200), contentType: "text/plain" }],
+		});
+		assert.equal(cache.get(a.id), undefined);
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("cache dir 0700 and files 0600", () => {
+	const dir = tempDir();
+	try {
+		const cache = createCache(dir);
+		const stored = cache.store({ kind: "fetch", queries: [], pages: [] });
+		assert.equal(statSync(dir).mode & 0o777, 0o700);
+		assert.equal(statSync(join(dir, `${stored.id}.json`)).mode & 0o777, 0o600);
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
 });
 
 test("selectStoredText lists when many pages", () => {
