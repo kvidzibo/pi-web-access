@@ -94,13 +94,15 @@ export function isBlockedIPv6(address: string): boolean {
 	if (groups[0] === 0x2001 && groups[1] === 0x2 && groups[2] === 0) return true;
 	if (groups[0] === 0x2001 && groups[1] === 0) return true;
 	if (groups[0] === 0x100 && groups[1] === 0) return true;
+	if (groups[0] === 0x3fff && (groups[1] & 0xf000) === 0) return true;
+	if (groups[0] === 0x5f00) return true;
+	if (groups[0] === 0x64 && groups[1] === 0xff9b) return true;
 	const mapped = groups.slice(0, 5).every((group) => group === 0) && groups[5] === 0xffff;
 	if (mapped) return isBlockedIPv4(ipv4FromGroups(groups[6], groups[7]));
+	const translatable = groups.slice(0, 4).every((group) => group === 0) && groups[4] === 0xffff && groups[5] === 0;
+	if (translatable) return true;
 	if (groups.slice(0, 6).every((group) => group === 0)) return isBlockedIPv4(ipv4FromGroups(groups[6], groups[7]));
 	if (groups[0] === 0x2002) return isBlockedIPv4(ipv4FromGroups(groups[1], groups[2]));
-	if (groups[0] === 0x64 && groups[1] === 0xff9b && groups[2] === 0 && groups[3] === 0 && groups[4] === 0 && groups[5] === 0) {
-		return isBlockedIPv4(ipv4FromGroups(groups[6], groups[7]));
-	}
 	return false;
 }
 

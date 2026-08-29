@@ -34,6 +34,10 @@ test("blocks IPv6 loopback, ULA, link-local, mapped loopback", () => {
 	assert.equal(isBlockedIPv6("::ffff:127.0.0.1"), true);
 	assert.equal(isBlockedIPv6("2002:c0a8:1::1"), true);
 	assert.equal(isBlockedIPv6("64:ff9b::c0a8:1"), true);
+	assert.equal(isBlockedIPv6("64:ff9b:1::7f00:1"), true);
+	assert.equal(isBlockedIPv6("::ffff:0:127.0.0.1"), true);
+	assert.equal(isBlockedIPv6("3fff::1"), true);
+	assert.equal(isBlockedIPv6("5f00::1"), true);
 	assert.equal(isBlockedIPv6("2001::1"), true);
 	assert.equal(isBlockedIPv6("2002:0808:0808::1"), false);
 	assert.equal(isBlockedIPv6("2001:4860:4860::8888"), false);

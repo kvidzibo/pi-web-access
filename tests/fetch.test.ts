@@ -47,6 +47,28 @@ test("rejects oversized body", async () => {
 	assert.match(page.error ?? "", /too large/);
 });
 
+test("cancels body when content-length exceeds max", async () => {
+	let cancelled = false;
+	const body = new ReadableStream({
+		start(controller) {
+			controller.enqueue(new TextEncoder().encode("0123456789"));
+		},
+		cancel() {
+			cancelled = true;
+		},
+	});
+	const page = await fetchPage("https://example.com/big", {
+		lookup: publicLookup,
+		maxBytes: 8,
+		fetch: async () => new Response(body, {
+			status: 200,
+			headers: { "content-type": "text/plain", "content-length": "100" },
+		}),
+	});
+	assert.match(page.error ?? "", /too large/);
+	assert.equal(cancelled, true);
+});
+
 test("rejects pdf content type", async () => {
 	const page = await fetchPage("https://example.com/doc.pdf", {
 		lookup: publicLookup,

@@ -107,6 +107,7 @@ export async function fetchPage(url: string, options: FetchPageOptions = {}): Pr
 export async function readTextLimited(response: Response, maxBytes: number): Promise<string> {
 	const declared = Number(response.headers.get("content-length"));
 	if (Number.isFinite(declared) && declared > maxBytes) {
+		await cancelBody(response);
 		throw new Error(`Response too large (${declared} bytes)`);
 	}
 	if (!response.body) {

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, rmSync, statSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, statSync, utimesSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -69,6 +69,22 @@ test("slice and find helpers", () => {
 	assert.match(fuzzy, /retry/);
 	assert.match(fuzzy, /@\d+/);
 	assert.doesNotMatch(fuzzy, /@0:/);
+});
+
+test("get prunes expired siblings", () => {
+	const dir = tempDir();
+	try {
+		const cache = createCache(dir, { ttlMs: 1_000 });
+		const expired = cache.store({ kind: "fetch", queries: [], pages: [] });
+		const live = cache.store({ kind: "fetch", queries: [], pages: [] });
+		const expiredPath = join(dir, `${expired.id}.json`);
+		const old = (Date.now() - 5_000) / 1000;
+		utimesSync(expiredPath, old, old);
+		assert.ok(cache.get(live.id));
+		assert.equal(existsSync(expiredPath), false);
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
 });
 
 test("prunes expired files on create", () => {

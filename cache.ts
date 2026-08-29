@@ -39,6 +39,7 @@ export function createCache(dir: string, limits: Partial<CacheLimits> = {}) {
 	}
 
 	function get(id: string): StoredRecord | undefined {
+		prune();
 		if (!isSafeId(id)) return undefined;
 		const path = fileFor(id);
 		let raw: string;
@@ -215,27 +216,15 @@ export function formatQuery(query: QueryResult): string {
 
 export function formatRecordForModel(record: StoredRecord, inlineLimit = MAX_INLINE_CHARS): string {
 	const parts: string[] = [`responseId: ${record.id}`];
-	let remaining = inlineLimit;
-	const push = (chunk: string): boolean => {
-		if (remaining <= 0) return false;
-		if (chunk.length <= remaining) {
-			parts.push(chunk);
-			remaining -= chunk.length;
-			return true;
-		}
-		parts.push(`${chunk.slice(0, remaining)}\n\n[truncated; get_search_content responseId=${record.id}]`);
-		remaining = 0;
-		return false;
-	};
-	for (const query of record.queries) {
-		if (!push(formatQuery(query))) return parts.join("\n\n");
-	}
+	for (const query of record.queries) parts.push(formatQuery(query));
 	for (const page of record.pages) {
 		const body = page.error || page.content;
-		const header = `# ${page.title || page.url}\nURL: ${page.finalUrl || page.url}\n\n`;
-		if (!push(`${header}${body}`)) return parts.join("\n\n");
+		parts.push(`# ${page.title || page.url}\nURL: ${page.finalUrl || page.url}\n\n${body}`);
 	}
-	return parts.join("\n\n");
+	const joined = parts.join("\n\n");
+	if (joined.length <= inlineLimit) return joined;
+	const marker = `\n\n[truncated; get_search_content responseId=${record.id}]`;
+	return `${joined.slice(0, inlineLimit)}${marker}`;
 }
 
 function pickPage(pages: PageResult[], url?: string, urlIndex?: number): PageResult {
