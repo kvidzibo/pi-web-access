@@ -12,6 +12,17 @@ const turndown = new TurndownService({
 
 export function htmlToReadable(html: string, url: string): { title: string; content: string } {
 	const { document } = parseHTML(html);
+	let base = url;
+	try { base = new URL(document.querySelector("base[href]")?.getAttribute("href") ?? url, url).href; }
+	catch { /* An invalid document base falls back to the final fetched URL. */ }
+	for (const [selector, attribute] of [["a[href],area[href]", "href"], ["img[src],source[src]", "src"]]) {
+		for (const element of document.querySelectorAll(selector)) {
+			const value = element.getAttribute(attribute);
+			if (!value || value.startsWith("#")) continue;
+			try { element.setAttribute(attribute, new URL(value, base).href); }
+			catch { /* Preserve non-resolvable links as text, never fetch them here. */ }
+		}
+	}
 	let article: { title?: string | null; content?: string | null } | null = null;
 	try {
 		article = new Readability(document as unknown as Document, { charThreshold: 80 }).parse();

@@ -2,6 +2,7 @@ import { CONCURRENT_FETCHES, FETCH_TIMEOUT_MS, MAX_FETCH_BYTES, MAX_URLS, MAX_UR
 import { htmlToReadable } from "./html.ts";
 import { cancelBody, fetchRemoteUrl, type Lookup } from "./ssrf.ts";
 import type { FetchMode, PageResult } from "./types.ts";
+import { normalizeList, withTimeout } from "./utils.ts";
 
 const TEXT_TYPES = /^(text\/|application\/(json|xml|javascript|x-www-form-urlencoded|xhtml\+xml))/i;
 
@@ -14,17 +15,7 @@ export type FetchPageOptions = {
 };
 
 export function normalizeUrls(url?: unknown, urls?: unknown): string[] {
-	const raw = Array.isArray(urls) ? urls : url !== undefined ? [url] : [];
-	const out: string[] = [];
-	for (const item of raw) {
-		if (typeof item !== "string") continue;
-		const trimmed = item.trim();
-		if (!trimmed) continue;
-		if (trimmed.length > MAX_URL_CHARS) throw new Error(`URL too long (max ${MAX_URL_CHARS} characters)`);
-		if (!out.includes(trimmed)) out.push(trimmed);
-		if (out.length >= MAX_URLS) break;
-	}
-	return out;
+	return normalizeList(url, urls, "URL", MAX_URL_CHARS, MAX_URLS);
 }
 
 export function normalizeMode(value: unknown): FetchMode {
@@ -119,11 +110,7 @@ export async function readTextLimited(response: Response, maxBytes: number): Pro
 		await cancelBody(response);
 		throw new Error(`Response too large (${declared} bytes)`);
 	}
-	if (!response.body) {
-		const buffer = Buffer.from(await response.arrayBuffer());
-		if (buffer.length > maxBytes) throw new Error(`Response too large (${buffer.length} bytes)`);
-		return buffer.toString("utf8");
-	}
+	if (!response.body) return "";
 	const reader = response.body.getReader();
 	const chunks: Uint8Array[] = [];
 	let size = 0;
@@ -158,11 +145,6 @@ function isHtml(contentType: string, body: string): boolean {
 	if (type.includes("html")) return true;
 	if (type && !type.startsWith("text/")) return false;
 	return /<html[\s>]|<body[\s>]|<article[\s>]/i.test(body.slice(0, 4096));
-}
-
-function withTimeout(signal: AbortSignal | undefined, timeoutMs: number): AbortSignal {
-	const timeout = AbortSignal.timeout(timeoutMs);
-	return signal ? AbortSignal.any([signal, timeout]) : timeout;
 }
 
 async function mapPool<T, R>(items: T[], n: number, fn: (item: T) => Promise<R>): Promise<R[]> {

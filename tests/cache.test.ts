@@ -1,4 +1,12 @@
 import assert from "node:assert/strict";
+
+for (const mode of ["case-insensitive", "fuzzy"] as const) test(`Unicode matches keep original UTF-16 offsets: ${mode}`, () => {
+	assert.match(findPassages("İ x target", ["target"], mode), /@4:/);
+	assert.match(findPassages("İİ target", ["target"], mode), /@3:/);
+	assert.match(findPassages("😀 İ target", ["target"], mode), /@5:/);
+	assert.match(findPassages("ΟΣ", ["ος"], mode), /@0:/, "retain contextual lowercasing");
+	assert.match(findPassages("İ \n\t target", ["target"], mode), /@5:/);
+});
 import { existsSync, mkdtempSync, rmSync, statSync, utimesSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
