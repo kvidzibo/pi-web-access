@@ -1,4 +1,18 @@
 import assert from "node:assert/strict";
+
+// Resolve citations before Readability/Markdown extraction, including document bases.
+test("readable links and images resolve against the final URL and base element", () => {
+	const result = htmlToReadable(`<html><head><base href="../assets/"></head><body><article><p>${"A useful documentation paragraph. ".repeat(10)}<a href="guide">guide</a><a href="#part">part</a><a href="mailto:a@example.com">mail</a><img src="image.png" alt="figure"></p></article></body></html>`, "https://example.com/docs/start");
+	assert.match(result.content, /\[guide\]\(https:\/\/example.com\/assets\/guide\)/);
+	assert.match(result.content, /!\[figure\]\(https:\/\/example.com\/assets\/image.png\)/);
+	assert.match(result.content, /\[part\]\(#part\)/);
+	assert.match(result.content, /mailto:a@example.com/);
+});
+
+test("invalid base falls back to the final page URL", () => {
+	const result = htmlToReadable('<html><head><base href="http://["></head><body><p><a href="../next">next</a></p></body></html>', "https://example.com/docs/start");
+	assert.match(result.content, /https:\/\/example.com\/next/);
+});
 import { test } from "node:test";
 import { decodeDdgUrl, htmlToReadable, parseDdgHtml, parseExaMcpBody } from "../html.ts";
 

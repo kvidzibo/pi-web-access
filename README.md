@@ -43,6 +43,8 @@ Then `/reload` (or restart Pi).
 - The 30-second request timeout and cancellation include waiting for DNS. A canceled lookup cannot start an HTTP connection afterward.
 - Redirects discard cross-origin credentials and stale Host headers. POST-to-GET redirects also discard the body and its headers; HEAD remains HEAD on a 303.
 
+Readable Markdown resolves relative links and image sources against the final fetched URL, including a valid HTML `<base>` element. Fragment anchors and non-HTTP links remain links only; extraction never fetches them.
+
 ## Search and errors
 
 Domain filters are sent to both providers and enforced on returned URLs; multiple allowed domains use OR. DuckDuckGo uses its date filter for `recencyFilter`; Exa receives a relative-date query hint, not a guaranteed date constraint. Empty matching results are identified explicitly.
@@ -53,7 +55,7 @@ A failed query no longer discards successful queries from the same batch. A prov
 
 `~/.pi/agent/web-access-cache` (dir 0700, files 0600). Entries expire after 1 hour. Expired and over-quota files are deleted when the extension loads and on store/get. Inactive leftover files can remain until the next load.
 
-Caps: 128 entries, 128 MiB.
+Caps: 128 entries, 128 MiB. Case-insensitive and fuzzy match offsets refer to the original UTF-16 text, even when Unicode lowercasing changes its length.
 
 ## Tests
 

@@ -36,6 +36,7 @@
     "search.ts",
     "ssrf.ts",
     "types.ts",
+    "utils.ts",
     "LICENSE",
     "README.md"
   ],

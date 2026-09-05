@@ -254,28 +254,29 @@ function pickQuery(queries: QueryResult[], query?: string, queryIndex?: number):
 
 function locate(text: string, needle: string, mode: FindMode): Array<{ index: number; context: string }> {
 	const hits: Array<{ index: number; context: string }> = [];
-	if (mode === "fuzzy") {
-		const hay = collapseWithMap(text.toLowerCase());
-		const find = collapse(needle.toLowerCase());
-		let from = 0;
-		while (from < hay.text.length) {
-			const index = hay.text.indexOf(find, from);
-			if (index < 0) break;
-			const originalIndex = hay.map[index] ?? index;
-			const originalEnd = hay.map[index + find.length - 1] ?? originalIndex;
-			hits.push({ index: originalIndex, context: contextAround(text, originalIndex, originalEnd - originalIndex + 1) });
-			from = index + Math.max(find.length, 1);
-			if (hits.length >= 20) break;
+	const folded = mode === "exact" ? text : text.toLowerCase();
+	// Default Unicode lowercasing can expand a code point (İ -> i + combining dot).
+	// Lowercase the whole string to retain contextual mappings such as Greek sigma.
+	const foldMap: number[] = [];
+	if (folded.length !== text.length) {
+		let offset = 0;
+		for (const char of text) {
+			for (let j = 0; j < char.toLowerCase().length; j++) foldMap.push(offset + Math.min(j, char.length - 1));
+			offset += char.length;
 		}
-		return hits;
 	}
-	const hay = mode === "exact" ? text : text.toLowerCase();
-	const find = mode === "exact" ? needle : needle.toLowerCase();
+	const normalized = mode === "fuzzy" ? collapseWithMap(folded) : undefined;
+	const hay = normalized?.text ?? folded;
+	const find = mode === "fuzzy" ? collapse(needle.toLowerCase()) : mode === "exact" ? needle : needle.toLowerCase();
 	let from = 0;
 	while (from < hay.length) {
 		const index = hay.indexOf(find, from);
 		if (index < 0) break;
-		hits.push({ index, context: contextAround(text, index, find.length) });
+		const start = normalized?.map[index] ?? index;
+		const end = normalized?.map[index + find.length - 1] ?? index + find.length - 1;
+		const originalIndex = foldMap[start] ?? start;
+		const originalEnd = foldMap[end] ?? end;
+		hits.push({ index: originalIndex, context: contextAround(text, originalIndex, originalEnd - originalIndex + 1) });
 		from = index + Math.max(find.length, 1);
 		if (hits.length >= 20) break;
 	}

@@ -165,11 +165,7 @@ function fail(error: unknown): never {
 }
 
 function uniqueUrls(urls: string[]): string[] {
-	const out: string[] = [];
-	for (const url of urls) {
-		if (!out.includes(url)) out.push(url);
-	}
-	return out;
+	return [...new Set(urls)];
 }
 
 function optionalString(value: unknown): string | undefined {

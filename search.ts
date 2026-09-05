@@ -3,6 +3,7 @@ import { readTextLimited } from "./fetch.ts";
 import { parseDdgHtml, parseExaMcpBody } from "./html.ts";
 import { fetchRemoteUrl } from "./ssrf.ts";
 import type { QueryResult, RecencyFilter, SearchHit, SearchProvider } from "./types.ts";
+import { normalizeList, withTimeout } from "./utils.ts";
 
 export type SearchOptions = {
 	numResults?: number;
@@ -13,17 +14,7 @@ export type SearchOptions = {
 };
 
 export function normalizeQueries(query?: unknown, queries?: unknown): string[] {
-	const raw = Array.isArray(queries) ? queries : query !== undefined ? [query] : [];
-	const out: string[] = [];
-	for (const item of raw) {
-		if (typeof item !== "string") continue;
-		const trimmed = item.trim();
-		if (!trimmed) continue;
-		if (trimmed.length > MAX_QUERY_CHARS) throw new Error(`Query too long (max ${MAX_QUERY_CHARS} characters)`);
-		if (!out.includes(trimmed)) out.push(trimmed);
-		if (out.length >= MAX_QUERIES) break;
-	}
-	return out;
+	return normalizeList(query, queries, "Query", MAX_QUERY_CHARS, MAX_QUERIES);
 }
 
 export function normalizeCount(value: unknown): number {
@@ -225,11 +216,6 @@ function normalizeDomain(value: string): string | null {
 
 function hostMatches(hostname: string, domain: string): boolean {
 	return hostname === domain || hostname.endsWith(`.${domain}`);
-}
-
-function withTimeout(signal: AbortSignal | undefined, timeoutMs: number): AbortSignal {
-	const timeout = AbortSignal.timeout(timeoutMs);
-	return signal ? AbortSignal.any([signal, timeout]) : timeout;
 }
 
 function isTimeout(err: unknown): boolean {
