@@ -1,6 +1,8 @@
 # pi-web-access
 
-Pi package. Keyless web search + local URL fetch. No GitHub clone, PDF, video, curator UI, or API keys.
+Search the web, fetch pages as Markdown and inspect cached results from the [Pi coding agent](https://github.com/earendil-works/pi), without supplying search API keys. Revisit long results in chunks or find a passage without fetching the page again.
+
+No GitHub clone, PDF, video or curator UI.
 
 | tool | job |
 |---|---|
@@ -10,7 +12,48 @@ Pi package. Keyless web search + local URL fetch. No GitHub clone, PDF, video, c
 
 > **Security:** Pi packages run with your full system permissions. Search and content requests hit the public internet from this machine. A local SSRF gate blocks private/loopback/link-local/special-use IPs, URL credentials, and non-http(s), rechecks every redirect, and pins DNS lookup to the connecting socket (no second resolve). Install only from a source you trust.
 
+## Quick example
+
+After [installing](#install), ask Pi:
+
+```text
+Search nodejs.org for the Node.js test runner documentation.
+Fetch the relevant documentation page as Markdown, then use
+get_search_content with the fetch responseId to find "node --test".
+Include the source URL in your answer.
+```
+
+The tool sequence is **search → fetch → inspect the cached text**:
+
+1. `web_search`:
+
+   ```json
+   {
+     "query": "Node.js test runner documentation",
+     "domainFilter": ["nodejs.org"],
+     "numResults": 3
+   }
+   ```
+
+2. `fetch_content`, using a relevant result URL (for example):
+
+   ```json
+   { "url": "https://nodejs.org/api/test.html" }
+   ```
+
+3. `get_search_content`, using the ID returned by that fetch:
+
+   ```json
+   { "responseId": "REPLACE_WITH_FETCH_RESPONSE_ID", "findText": "node --test" }
+   ```
+
+Replace the placeholder with the actual `responseId`. These are example arguments, not captured results. Search and fetch need public network access; the final lookup reads the local cache, whose entries expire after one hour. Provider availability and limits still apply even without API keys.
+
+**Design trade-off:** HTTP fetching and Readability extraction avoid launching a browser, but do not execute page JavaScript. Use [pi-browser](https://github.com/kvidzibo/pi-browser) when content needs interaction or rendering. See [fetch handling](fetch.ts), [HTML extraction](html.ts) and [extraction tests](tests/html.test.ts).
+
 ## Install
+
+This README tracks repository source. npm packages and Git tags may be behind it; check the version you install before relying on newer features.
 
 ```bash
 pi install npm:@kvidzibo/pi-web-access
