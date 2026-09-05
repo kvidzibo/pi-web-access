@@ -184,6 +184,17 @@ test("formatRecordForModel caps at inlineLimit then marker", () => {
 	assert.ok(formatRecordForModel(record, 10_000).length < 10_000);
 });
 
+test("store rejects unsafe IDs without writing outside the cache", () => {
+	const dir = tempDir();
+	try {
+		const cache = createCache(join(dir, "cache"));
+		assert.throws(() => cache.store({ id: "../escaped", kind: "fetch", queries: [], pages: [] }), /Invalid cache id/);
+		assert.equal(existsSync(join(dir, "escaped.json")), false);
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
 test("rejects unsafe ids", () => {
 	assert.equal(isSafeId("../etc/passwd"), false);
 	assert.equal(isSafeId("not-a-uuid"), false);

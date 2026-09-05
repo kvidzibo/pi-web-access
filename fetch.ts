@@ -34,6 +34,7 @@ export function normalizeMode(value: unknown): FetchMode {
 }
 
 export async function fetchPages(urls: string[], options: FetchPageOptions = {}): Promise<PageResult[]> {
+	options.signal?.throwIfAborted();
 	return mapPool(urls, CONCURRENT_FETCHES, (url) => fetchPage(url, options));
 }
 
@@ -51,9 +52,14 @@ export async function fetchPage(url: string, options: FetchPageOptions = {}): Pr
 			fetch: options.fetch,
 			lookup: options.lookup,
 		});
+		if (options.signal?.aborted) {
+			await cancelBody(response);
+			options.signal.throwIfAborted();
+		}
 		const contentType = response.headers.get("content-type") || "";
 		if (!response.ok) {
 			await cancelBody(response);
+			options.signal?.throwIfAborted();
 			return {
 				url,
 				finalUrl: finalUrl.toString(),
@@ -65,6 +71,7 @@ export async function fetchPage(url: string, options: FetchPageOptions = {}): Pr
 		}
 		if (isBinaryType(contentType)) {
 			await cancelBody(response);
+			options.signal?.throwIfAborted();
 			return {
 				url,
 				finalUrl: finalUrl.toString(),
@@ -75,6 +82,7 @@ export async function fetchPage(url: string, options: FetchPageOptions = {}): Pr
 			};
 		}
 		const text = await readTextLimited(response, options.maxBytes ?? MAX_FETCH_BYTES);
+		options.signal?.throwIfAborted();
 		if (mode === "raw" || !isHtml(contentType, text)) {
 			return {
 				url,
@@ -93,13 +101,14 @@ export async function fetchPage(url: string, options: FetchPageOptions = {}): Pr
 			contentType,
 		};
 	} catch (err) {
+		options.signal?.throwIfAborted();
 		return {
 			url,
 			finalUrl: url,
 			title: "",
 			content: "",
 			contentType: "",
-			error: err instanceof Error ? err.message : String(err),
+			error: err instanceof Error ? err.message || err.name : String(err) || "Unknown error",
 		};
 	}
 }
@@ -118,18 +127,22 @@ export async function readTextLimited(response: Response, maxBytes: number): Pro
 	const reader = response.body.getReader();
 	const chunks: Uint8Array[] = [];
 	let size = 0;
-	while (true) {
-		const { done, value } = await reader.read();
-		if (done) break;
-		if (!value) continue;
-		size += value.byteLength;
-		if (size > maxBytes) {
-			await reader.cancel();
-			throw new Error(`Response too large (>${maxBytes} bytes)`);
+	try {
+		while (true) {
+			const { done, value } = await reader.read();
+			if (done) break;
+			if (!value) continue;
+			size += value.byteLength;
+			if (size > maxBytes) throw new Error(`Response too large (>${maxBytes} bytes)`);
+			chunks.push(value);
 		}
-		chunks.push(value);
+		return Buffer.concat(chunks.map((chunk) => Buffer.from(chunk))).toString("utf8");
+	} catch (err) {
+		try { await reader.cancel(); } catch { /* Preserve the original read/size error. */ }
+		throw err;
+	} finally {
+		reader.releaseLock();
 	}
-	return Buffer.concat(chunks.map((chunk) => Buffer.from(chunk))).toString("utf8");
 }
 
 function isBinaryType(contentType: string): boolean {

@@ -49,6 +49,31 @@ test("parseExaMcpBody reads JSON results", () => {
 	assert.match(hits[0].snippet, /Install/);
 });
 
+test("plain JSON MCP tool errors are not mistaken for results", () => {
+	assert.throws(() => parseExaMcpBody(JSON.stringify({
+		result: { isError: true, content: [{ type: "text", text: "Failure\nURL: https://error.example" }] },
+	})), /Failure/);
+});
+
+test("MCP parsing combines text blocks and accepts multiline SSE data", () => {
+	const payload = {
+		result: { content: [
+			{ type: "text", text: "Title: One\nURL: https://one.example" },
+			{ type: "text", text: JSON.stringify({ results: [{ title: "Two", url: "https://two.example" }] }) },
+		] },
+	};
+	const sse = JSON.stringify(payload, null, 2).split("\n").map((line) => `data: ${line}`).join("\r\n") + "\r\n\r\n";
+	for (const body of [JSON.stringify(payload), sse]) {
+		assert.deepEqual(parseExaMcpBody(body).map((hit) => hit.title), ["One", "Two"]);
+	}
+});
+
+test("valid empty Exa results are distinguishable from malformed content", () => {
+	const body = JSON.stringify({ result: { content: [{ type: "text", text: '{"results":[]}' }] } });
+	assert.deepEqual(parseExaMcpBody(body), []);
+	assert.throws(() => parseExaMcpBody("not JSON or SSE"), /empty content|no parseable results/);
+});
+
 test("parseExaMcpBody surfaces RPC errors", () => {
 	assert.throws(() => parseExaMcpBody(`data: {"error":{"message":"nope"}}`), /nope/);
 });

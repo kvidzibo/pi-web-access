@@ -2,7 +2,8 @@ import { lookup as dnsLookup } from "node:dns/promises";
 import http from "node:http";
 import https from "node:https";
 import net from "node:net";
-import { Readable } from "node:stream";
+import { addAbortSignal, pipeline, Readable } from "node:stream";
+import { createBrotliDecompress, createGunzip, createInflate } from "node:zlib";
 import { MAX_REDIRECTS } from "./constants.ts";
 
 export type LookupAddress = { address: string; family: number };
@@ -11,6 +12,7 @@ export type PinnedFetch = (url: URL, address: LookupAddress, init: RequestInit) 
 type FetchImpl = typeof fetch;
 
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
+const NULL_BODY_STATUSES = new Set([204, 205, 304]);
 const METADATA_HOSTS = new Set(["metadata.google.internal", "metadata.internal", "metadata"]);
 
 export function normalizeHostname(hostname: string): string {
@@ -116,6 +118,7 @@ export function isBlockedAddress(address: string): boolean {
 
 export type ValidateOptions = {
 	lookup?: Lookup;
+	signal?: AbortSignal | null;
 };
 
 export async function validateRemoteUrl(rawUrl: string | URL, options: ValidateOptions = {}): Promise<URL> {
@@ -127,9 +130,10 @@ export async function resolvePinnedTarget(rawUrl: string | URL, options: Validat
 	url: URL;
 	address: LookupAddress;
 }> {
+	options.signal?.throwIfAborted();
 	let url: URL;
 	try {
-		url = rawUrl instanceof URL ? rawUrl : new URL(rawUrl);
+		url = new URL(rawUrl);
 	} catch {
 		throw new Error(`Invalid URL: ${String(rawUrl)}`);
 	}
@@ -157,8 +161,12 @@ export async function resolvePinnedTarget(rawUrl: string | URL, options: Validat
 
 	let addresses: LookupAddress[];
 	try {
-		addresses = await (options.lookup ?? ((host: string) => dnsLookup(host, { all: true, verbatim: true })))(hostname);
+		addresses = await withAbort(
+			() => (options.lookup ?? ((host: string) => dnsLookup(host, { all: true, verbatim: true })))(hostname),
+			options.signal,
+		);
 	} catch (err) {
+		options.signal?.throwIfAborted();
 		const message = err instanceof Error ? err.message : String(err);
 		throw new Error(`Failed to resolve ${hostname}: ${message}`);
 	}
@@ -177,7 +185,7 @@ export function pinnedConnectOptions(url: URL, address: LookupAddress): https.Re
 		port: url.port ? Number(url.port) : isHttps ? 443 : 80,
 		path: `${url.pathname}${url.search}`,
 		family: address.family === 6 ? 6 : 4,
-		servername: isHttps ? url.hostname : undefined,
+		servername: isHttps && !net.isIP(normalizeHostname(url.hostname)) ? normalizeHostname(url.hostname) : undefined,
 		headers: { host: url.host },
 	};
 }
@@ -190,12 +198,56 @@ export async function cancelBody(response: Response): Promise<void> {
 	}
 }
 
+async function withAbort<T>(operation: () => Promise<T>, signal?: AbortSignal | null): Promise<T> {
+	signal?.throwIfAborted();
+	if (!signal) return operation();
+	let onAbort!: () => void;
+	const aborted = new Promise<never>((_resolve, reject) => {
+		onAbort = () => reject(signal.reason);
+		signal.addEventListener("abort", onAbort, { once: true });
+	});
+	try {
+		return await Promise.race([
+			Promise.resolve().then(() => { signal.throwIfAborted(); return operation(); }),
+			aborted,
+		]);
+	} finally {
+		signal.removeEventListener("abort", onAbort);
+	}
+}
+
+function responseBody(res: http.IncomingMessage, headers: Headers, signal?: AbortSignal | null): ReadableStream<Uint8Array> {
+	const encodings = (headers.get("content-encoding") ?? "").toLowerCase().split(",").map((item) => item.trim()).filter((item) => item && item !== "identity");
+	if (encodings.length > 3) throw new Error("Too many content encodings (max 3)");
+	// Validate before allocating streams, so unsupported encodings cannot leak decoders.
+	for (const encoding of encodings) {
+		if (!["gzip", "deflate", "br"].includes(encoding)) throw new Error(`Unsupported content encoding: ${encoding}`);
+	}
+	let stream: Readable = res;
+	if (encodings.length > 0) {
+		const decoders = encodings.reverse().map((encoding) => encoding === "gzip" ? createGunzip() : encoding === "deflate" ? createInflate() : createBrotliDecompress());
+		stream = decoders[decoders.length - 1];
+		// pipeline propagates errors/cancellation in both directions; toWeb exposes
+		// decoder errors to the reader. Its callback consumes pipeline completion.
+		pipeline([res, ...decoders], () => {});
+		headers.delete("content-encoding");
+		headers.delete("content-length");
+	}
+	if (signal) addAbortSignal(signal, stream);
+	return Readable.toWeb(stream, {
+		strategy: { highWaterMark: 64 * 1024, size: (chunk: Uint8Array) => chunk.byteLength },
+	}) as ReadableStream<Uint8Array>;
+}
+
 export async function pinnedFetch(url: URL, address: LookupAddress, init: RequestInit = {}): Promise<Response> {
+	init.signal?.throwIfAborted();
 	const isHttps = url.protocol === "https:";
 	const lib = isHttps ? https : http;
 	const method = (init.method ?? "GET").toUpperCase();
+	if (["CONNECT", "TRACE", "TRACK"].includes(method)) throw new Error(`Unsupported request method: ${method}`);
 	const headers = new Headers(init.headers);
-	if (!headers.has("host")) headers.set("Host", url.host);
+	headers.set("Host", url.host);
+	if (!headers.has("accept-encoding")) headers.set("Accept-Encoding", "gzip, deflate, br");
 	const outgoing: http.OutgoingHttpHeaders = {};
 	headers.forEach((value, key) => {
 		outgoing[key] = value;
@@ -209,19 +261,40 @@ export async function pinnedFetch(url: URL, address: LookupAddress, init: Reques
 			headers: { ...connect.headers, ...outgoing },
 			signal: init.signal ?? undefined,
 		}, (res) => {
-			const respHeaders = new Headers();
-			for (const [key, value] of Object.entries(res.headersDistinct ?? res.headers)) {
-				if (value === undefined) continue;
-				const values = Array.isArray(value) ? value : [value];
-				for (const item of values) {
-					if (item !== undefined) respHeaders.append(key, item);
+			// This callback runs after the Promise executor returns, so exceptions
+			// must be rejected here rather than escaping as uncaughtException.
+			try {
+				const status = res.statusCode;
+				if (status === undefined || !Number.isInteger(status) || status < 200 || status > 599) {
+					throw new Error(`Unsupported HTTP status: ${status ?? "missing"}`);
 				}
+				const respHeaders = new Headers();
+				for (const [key, value] of Object.entries(res.headersDistinct ?? res.headers)) {
+					if (value === undefined) continue;
+					const values = Array.isArray(value) ? value : [value];
+					for (const item of values) {
+						if (item !== undefined) respHeaders.append(key, item);
+					}
+				}
+				const nullBody = method === "HEAD" || NULL_BODY_STATUSES.has(status);
+				const response = new Response(nullBody ? null : responseBody(res, respHeaders, init.signal), {
+					status,
+					statusText: res.statusMessage ?? "",
+					headers: respHeaders,
+				});
+				// No consumer will read these streams; do not drain unbounded data.
+				if (nullBody) res.destroy();
+				resolve(response);
+			} catch (err) {
+				res.destroy();
+				req.destroy();
+				reject(err);
 			}
-			resolve(new Response(Readable.toWeb(res) as ReadableStream<Uint8Array>, {
-				status: res.statusCode ?? 0,
-				statusText: res.statusMessage ?? "",
-				headers: respHeaders,
-			}));
+		});
+		// Upgrades bypass the response callback and cannot be Fetch Responses.
+		req.once("upgrade", (res, socket) => {
+			socket.destroy();
+			reject(new Error(`Unsupported HTTP upgrade (status ${res.statusCode ?? "missing"})`));
 		});
 		req.on("error", reject);
 		const body = init.body;
@@ -251,10 +324,13 @@ export async function fetchRemoteUrl(
 	const fetchImpl = options.fetch;
 	const pin = options.pinnedFetch ?? pinnedFetch;
 	const maxRedirects = options.maxRedirects ?? MAX_REDIRECTS;
-	let current = await resolvePinnedTarget(url, options);
-	let requestInit = init;
+	const signal = init.signal ?? options.signal;
+	const validateOptions = { ...options, signal };
+	let current = await resolvePinnedTarget(url, validateOptions);
+	let requestInit = { ...init, signal };
 
 	for (let redirects = 0; redirects <= maxRedirects; redirects++) {
+		signal?.throwIfAborted();
 		const response = fetchImpl
 			? await fetchImpl(current.url, { ...requestInit, redirect: "manual" })
 			: await pin(current.url, current.address, { ...requestInit, redirect: "manual" });
@@ -268,11 +344,21 @@ export async function fetchRemoteUrl(
 		}
 
 		await cancelBody(response);
-		current = await resolvePinnedTarget(new URL(location, current.url), options);
-		if (response.status === 303 || ((response.status === 301 || response.status === 302) && requestInit.method?.toUpperCase() === "POST")) {
+		const next = await resolvePinnedTarget(new URL(location, current.url), validateOptions);
+		const headers = new Headers(requestInit.headers);
+		headers.delete("host");
+		if (next.url.origin !== current.url.origin) {
+			for (const name of ["authorization", "proxy-authorization", "cookie", "cookie2"]) headers.delete(name);
+		}
+		const method = (requestInit.method ?? "GET").toUpperCase();
+		if ((response.status === 303 && method !== "GET" && method !== "HEAD") ||
+			((response.status === 301 || response.status === 302) && method === "POST")) {
 			const { body: _body, ...nextInit } = requestInit;
 			requestInit = { ...nextInit, method: "GET" };
+			for (const name of ["content-length", "content-type", "content-encoding", "content-language", "content-location", "transfer-encoding"]) headers.delete(name);
 		}
+		requestInit = { ...requestInit, headers };
+		current = next;
 	}
 
 	throw new Error(`Too many redirects fetching ${current.url.toString()}`);

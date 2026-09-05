@@ -1,6 +1,7 @@
 import { DDG_SEARCH_URL, EXA_MCP_URL, MAX_DOMAIN_FILTERS, MAX_QUERIES, MAX_QUERY_CHARS, MAX_SEARCH_BODY_BYTES, SEARCH_TIMEOUT_MS, USER_AGENT } from "./constants.ts";
 import { readTextLimited } from "./fetch.ts";
 import { parseDdgHtml, parseExaMcpBody } from "./html.ts";
+import { fetchRemoteUrl } from "./ssrf.ts";
 import type { QueryResult, RecencyFilter, SearchHit, SearchProvider } from "./types.ts";
 
 export type SearchOptions = {
@@ -60,10 +61,11 @@ export function normalizeDomainFilters(domainFilter: string[] | undefined): { al
 }
 
 export function matchesDomainFilters(url: string, filters: { allowed: string[]; blocked: string[] }): boolean {
-	if (filters.allowed.length === 0 && filters.blocked.length === 0) return true;
 	let hostname: string;
 	try {
-		hostname = new URL(url).hostname.toLowerCase();
+		const parsed = new URL(url);
+		if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return false;
+		hostname = parsed.hostname.toLowerCase().replace(/\.$/, "");
 	} catch {
 		return false;
 	}
@@ -72,6 +74,7 @@ export function matchesDomainFilters(url: string, filters: { allowed: string[]; 
 }
 
 export function hitsToAnswer(hits: SearchHit[]): string {
+	if (hits.length === 0) return "No results matched this query and its filters.";
 	return hits
 		.map((hit) => hit.snippet ? `${hit.snippet}\nSource: ${hit.title} (${hit.url})` : `Source: ${hit.title} (${hit.url})`)
 		.join("\n\n");
@@ -84,7 +87,13 @@ export async function searchQueries(
 ): Promise<QueryResult[]> {
 	const results: QueryResult[] = [];
 	for (const query of queries) {
-		results.push(await searchOne(query, provider, options));
+		options.signal?.throwIfAborted();
+		try {
+			results.push(await searchOne(query, provider, options));
+		} catch (err) {
+			options.signal?.throwIfAborted();
+			results.push({ query, provider, answer: "", hits: [], error: errorMessage(err) });
+		}
 	}
 	return results;
 }
@@ -96,15 +105,17 @@ async function searchOne(query: string, provider: SearchProvider, options: Searc
 	try {
 		return await searchExa(query, options);
 	} catch (err) {
-		if (isAbort(err)) throw err;
-		const exaError = err instanceof Error ? err.message : String(err);
+		options.signal?.throwIfAborted();
+		if (isTimeout(err)) throw err;
+		const exaError = errorMessage(err);
 		try {
 			const fallback = await searchDuckDuckGo(query, options);
 			fallback.answer = `${fallback.answer}\n\n[fallback: Exa failed: ${exaError}]`;
 			return fallback;
 		} catch (fallbackErr) {
-			if (isAbort(fallbackErr)) throw fallbackErr;
-			const ddgError = fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr);
+			options.signal?.throwIfAborted();
+			if (isTimeout(fallbackErr)) throw fallbackErr;
+			const ddgError = errorMessage(fallbackErr);
 			return {
 				query,
 				provider: "auto",
@@ -117,10 +128,10 @@ async function searchOne(query: string, provider: SearchProvider, options: Searc
 }
 
 export async function searchExa(query: string, options: SearchOptions = {}): Promise<QueryResult> {
+	options.signal?.throwIfAborted();
 	const numResults = normalizeCount(options.numResults);
-	const fetchImpl = options.fetch ?? fetch;
 	const mcpQuery = buildExaQuery(query, options);
-	const response = await fetchImpl(`${EXA_MCP_URL}?tools=web_search_exa`, {
+	const { response, body } = await requestSearchText(`${EXA_MCP_URL}?tools=web_search_exa`, {
 		method: "POST",
 		headers: {
 			"Content-Type": "application/json",
@@ -133,9 +144,7 @@ export async function searchExa(query: string, options: SearchOptions = {}): Pro
 			method: "tools/call",
 			params: { name: "web_search_exa", arguments: { query: mcpQuery, numResults } },
 		}),
-		signal: withTimeout(options.signal, SEARCH_TIMEOUT_MS),
-	});
-	const body = await readTextLimited(response, MAX_SEARCH_BODY_BYTES);
+	}, options);
 	if (!response.ok) {
 		if (response.status === 429) throw new Error(`Exa MCP rate limit (429): ${body.slice(0, 200)}`);
 		throw new Error(`Exa MCP error ${response.status}: ${body.slice(0, 300)}`);
@@ -145,19 +154,18 @@ export async function searchExa(query: string, options: SearchOptions = {}): Pro
 }
 
 export async function searchDuckDuckGo(query: string, options: SearchOptions = {}): Promise<QueryResult> {
+	options.signal?.throwIfAborted();
 	const numResults = normalizeCount(options.numResults);
-	const fetchImpl = options.fetch ?? fetch;
 	const url = new URL(DDG_SEARCH_URL);
-	url.searchParams.set("q", query);
-	const response = await fetchImpl(url, {
+	url.searchParams.set("q", buildDomainQuery(query, options.domainFilter));
+	if (options.recencyFilter) url.searchParams.set("df", { day: "d", week: "w", month: "m", year: "y" }[options.recencyFilter]);
+	const { response, body } = await requestSearchText(url, {
 		method: "GET",
 		headers: {
 			Accept: "text/html",
 			"User-Agent": USER_AGENT,
 		},
-		signal: withTimeout(options.signal, SEARCH_TIMEOUT_MS),
-	});
-	const body = await readTextLimited(response, MAX_SEARCH_BODY_BYTES);
+	}, options);
 	if (!response.ok) throw new Error(`DuckDuckGo search error ${response.status}: ${body.slice(0, 300)}`);
 	const parsed = parseDdgHtml(body);
 	if (parsed.length === 0) throw new Error("DuckDuckGo returned no parseable results");
@@ -165,27 +173,41 @@ export async function searchDuckDuckGo(query: string, options: SearchOptions = {
 	return { query, provider: "duckduckgo", answer: hitsToAnswer(hits), hits };
 }
 
+async function requestSearchText(url: string | URL, init: RequestInit, options: SearchOptions): Promise<{ response: Response; body: string }> {
+	const signal = withTimeout(options.signal, SEARCH_TIMEOUT_MS);
+	try {
+		const response = options.fetch
+			? await options.fetch(url, { ...init, signal })
+			: (await fetchRemoteUrl(url, { ...init, signal })).response;
+		const body = await readTextLimited(response, MAX_SEARCH_BODY_BYTES);
+		signal.throwIfAborted();
+		return { response, body };
+	} catch (err) {
+		// Node HTTP and stream adapters wrap timeout reasons in AbortError.
+		// Keep the original signal reason consistent across DNS, HTTP, and body reads.
+		signal.throwIfAborted();
+		throw err;
+	}
+}
+
 function applyDomainFilter(hits: SearchHit[], domainFilter?: string[]): SearchHit[] {
 	const filters = normalizeDomainFilters(domainFilter);
 	return hits.filter((hit) => matchesDomainFilters(hit.url, filters));
 }
 
-function buildExaQuery(query: string, options: SearchOptions): string {
+function buildDomainQuery(query: string, domainFilter?: string[]): string {
+	const { allowed, blocked } = normalizeDomainFilters(domainFilter);
 	const parts = [query];
-	for (const raw of options.domainFilter ?? []) {
-		const blocked = raw.trim().startsWith("-");
-		const domain = normalizeDomain(blocked ? raw.trim().slice(1) : raw);
-		if (!domain) continue;
-		parts.push(blocked ? `-site:${domain}` : `site:${domain}`);
-	}
-	if (options.recencyFilter) {
-		const now = new Date();
-		if (options.recencyFilter === "day") parts.push("past 24 hours");
-		else if (options.recencyFilter === "week") parts.push("past week");
-		else if (options.recencyFilter === "month") parts.push(`${now.toLocaleString("en", { month: "long" })} ${now.getFullYear()}`);
-		else parts.push(String(now.getFullYear()));
-	}
+	if (allowed.length === 1) parts.push(`site:${allowed[0]}`);
+	else if (allowed.length > 1) parts.push(`(${allowed.map((domain) => `site:${domain}`).join(" OR ")})`);
+	parts.push(...blocked.map((domain) => `-site:${domain}`));
 	return parts.join(" ");
+}
+
+function buildExaQuery(query: string, options: SearchOptions): string {
+	const queryWithDomains = buildDomainQuery(query, options.domainFilter);
+	if (!options.recencyFilter) return queryWithDomains;
+	return `${queryWithDomains} ${options.recencyFilter === "day" ? "past 24 hours" : `past ${options.recencyFilter}`}`;
 }
 
 function normalizeDomain(value: string): string | null {
@@ -210,6 +232,10 @@ function withTimeout(signal: AbortSignal | undefined, timeoutMs: number): AbortS
 	return signal ? AbortSignal.any([signal, timeout]) : timeout;
 }
 
-function isAbort(err: unknown): boolean {
-	return err instanceof Error && (err.name === "AbortError" || err.message.toLowerCase().includes("abort"));
+function isTimeout(err: unknown): boolean {
+	return err instanceof Error && err.name === "TimeoutError";
+}
+
+function errorMessage(err: unknown): string {
+	return err instanceof Error ? err.message || err.name : String(err) || "Unknown error";
 }

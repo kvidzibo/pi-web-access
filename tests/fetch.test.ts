@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { fetchPage, normalizeMode, normalizeUrls } from "../fetch.ts";
+import { fetchPage, fetchPages, normalizeMode, normalizeUrls, readTextLimited } from "../fetch.ts";
 
 const publicLookup = async () => [{ address: "93.184.216.34", family: 4 }];
 
@@ -67,6 +67,50 @@ test("cancels body when content-length exceeds max", async () => {
 	});
 	assert.match(page.error ?? "", /too large/);
 	assert.equal(cancelled, true);
+});
+
+test("caller cancellation rejects fetchPage and fetchPages instead of returning page errors", async () => {
+	const controller = new AbortController();
+	const reason = new Error("user canceled");
+	let markStarted!: () => void;
+	const started = new Promise<void>((resolve) => { markStarted = resolve; });
+	const page = fetchPage("https://example.com/", {
+		signal: controller.signal,
+		lookup: () => { markStarted(); return new Promise(() => {}); },
+	});
+	const rejected = assert.rejects(page, (err) => err === reason);
+	await started;
+	controller.abort(reason);
+	await rejected;
+	await assert.rejects(fetchPages(["https://example.com/", "https://other.example/"], { signal: controller.signal }), (err) => err === reason);
+	await assert.rejects(fetchPages([], { signal: controller.signal }), (err) => err === reason);
+	const racingController = new AbortController();
+	let canceled = false;
+	await assert.rejects(fetchPage("https://example.com/", {
+		signal: racingController.signal, lookup: publicLookup,
+		fetch: async () => {
+			racingController.abort(reason);
+			return new Response(new ReadableStream({ cancel() { canceled = true; } }));
+		},
+	}), (err) => err === reason);
+	assert.equal(canceled, true);
+});
+
+test("transport errors with empty messages still produce a nonempty page error", async () => {
+	const page = await fetchPage("https://example.com/", {
+		lookup: publicLookup,
+		fetch: async () => { throw new TypeError(""); },
+	});
+	assert.equal(page.error, "TypeError");
+});
+
+test("readTextLimited releases reader locks after success and failure", async () => {
+	const ok = new Response("ok");
+	assert.equal(await readTextLimited(ok, 10), "ok");
+	assert.equal(ok.body?.locked, false);
+	const oversized = new Response("too large");
+	await assert.rejects(readTextLimited(oversized, 1), /too large/);
+	assert.equal(oversized.body?.locked, false);
 });
 
 test("rejects pdf content type", async () => {

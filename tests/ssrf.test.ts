@@ -7,6 +7,7 @@ import {
 	isBlockedIPv6,
 	looksLikeNonCanonicalIp,
 	pinnedConnectOptions,
+	resolvePinnedTarget,
 	validateRemoteUrl,
 } from "../ssrf.ts";
 
@@ -131,6 +132,119 @@ test("mixed public+private DNS is fail-closed", async () => {
 		}),
 		/internal address/,
 	);
+});
+
+test("DNS lookup observes cancellation without opening a connection", { timeout: 2000 }, async () => {
+	const controller = new AbortController();
+	let connected = false;
+	let markStarted!: () => void;
+	const started = new Promise<void>((resolve) => { markStarted = resolve; });
+	const result = fetchRemoteUrl("https://example.com/", { signal: controller.signal }, {
+		lookup: () => { markStarted(); return new Promise(() => {}); },
+		pinnedFetch: async () => { connected = true; return new Response("unexpected"); },
+	});
+	const rejected = assert.rejects(result, { name: "AbortError" });
+	await started;
+	controller.abort();
+	await rejected;
+	assert.equal(connected, false);
+});
+
+test("late DNS rejections are handled after cancellation", async () => {
+	const controller = new AbortController();
+	let rejectLookup!: (error: Error) => void;
+	let markStarted!: () => void;
+	const started = new Promise<void>((resolve) => { markStarted = resolve; });
+	const result = validateRemoteUrl("https://example.com/", {
+		signal: controller.signal,
+		lookup: () => new Promise((_resolve, reject) => { rejectLookup = reject; markStarted(); }),
+	});
+	const rejected = assert.rejects(result, { name: "AbortError" });
+	await started;
+	controller.abort();
+	await rejected;
+	rejectLookup(new Error("late DNS failure"));
+	await new Promise<void>((resolve) => setImmediate(resolve));
+});
+
+test("already-aborted requests do not resolve DNS", async () => {
+	const controller = new AbortController();
+	controller.abort();
+	let lookedUp = false;
+	await assert.rejects(fetchRemoteUrl("https://example.com/", { signal: controller.signal }, {
+		lookup: async () => { lookedUp = true; return [{ address: "8.8.8.8", family: 4 }]; },
+		pinnedFetch: async () => new Response("unexpected"),
+	}), { name: "AbortError" });
+	assert.equal(lookedUp, false);
+});
+
+test("URL validation snapshots caller-owned URL objects before DNS lookup", async () => {
+	const url = new URL("https://example.com/original");
+	const target = await resolvePinnedTarget(url, {
+		lookup: async () => {
+			url.href = "http://localhost/changed";
+			return [{ address: "8.8.8.8", family: 4 }];
+		},
+	});
+	assert.equal(target.url.href, "https://example.com/original");
+});
+
+test("IP-literal HTTPS targets do not send an IP as TLS SNI", () => {
+	for (const [host, address, family] of [
+		["8.8.8.8", "8.8.8.8", 4],
+		["[2001:4860:4860::8888]", "2001:4860:4860::8888", 6],
+	] as const) {
+		assert.equal(pinnedConnectOptions(new URL(`https://${host}/`), { address, family }).servername, undefined);
+	}
+});
+
+test("cross-origin redirects strip credentials and stale Host headers", async () => {
+	const calls: Headers[] = [];
+	await fetchRemoteUrl("https://first.example/", {
+		headers: { Authorization: "Bearer test-only", Cookie: "fixture=1", "Proxy-Authorization": "Basic fixture", Host: "first.example", "X-Keep": "yes" },
+	}, {
+		lookup: async () => [{ address: "8.8.8.8", family: 4 }],
+		pinnedFetch: async (_url, _address, init) => {
+			calls.push(new Headers(init.headers));
+			return calls.length === 1
+				? new Response(null, { status: 302, headers: { location: "https://second.example/" } })
+				: new Response("ok");
+		},
+	});
+	for (const name of ["authorization", "cookie", "proxy-authorization", "host"]) assert.equal(calls[1].has(name), false, name);
+	assert.equal(calls[1].get("x-keep"), "yes");
+	assert.equal(calls[0].get("authorization"), "Bearer test-only");
+});
+
+test("POST redirects rewritten to GET drop body headers and retain same-origin auth", async () => {
+	let calls = 0;
+	await fetchRemoteUrl("https://example.com/", {
+		method: "POST", body: "body",
+		headers: { "Content-Length": "4", "Content-Type": "text/plain", "Content-Encoding": "identity", "Content-Language": "en", "Content-Location": "/body", "Transfer-Encoding": "chunked", Authorization: "Bearer fixture" },
+	}, {
+		lookup: async () => [{ address: "8.8.8.8", family: 4 }],
+		pinnedFetch: async (_url, _address, init) => {
+			if (++calls === 1) return new Response(null, { status: 302, headers: { location: "/next" } });
+			assert.equal(init.method, "GET");
+			assert.equal(init.body, undefined);
+			const headers = new Headers(init.headers);
+			for (const name of ["content-length", "content-type", "content-encoding", "content-language", "content-location", "transfer-encoding"]) assert.equal(headers.has(name), false, name);
+			assert.equal(headers.get("authorization"), "Bearer fixture");
+			return new Response("ok");
+		},
+	});
+});
+
+test("303 redirects preserve HEAD", async () => {
+	let calls = 0;
+	await fetchRemoteUrl("https://example.com/", { method: "HEAD" }, {
+		lookup: async () => [{ address: "8.8.8.8", family: 4 }],
+		pinnedFetch: async (_url, _address, init) => {
+			if (++calls === 1) return new Response(null, { status: 303, headers: { location: "/next" } });
+			assert.equal(init.method, "HEAD");
+			return new Response(null);
+		},
+	});
 });
 
 test("redirect body is cancelled", async () => {
