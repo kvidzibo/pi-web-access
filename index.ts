@@ -33,7 +33,7 @@ export default function webAccess(pi: ExtensionAPI) {
 		async execute(_id, params, signal, onUpdate) {
 			try {
 				const queries = normalizeQueries(params.query, params.queries);
-				if (queries.length === 0) return textResult("Error: No query provided. Use query or queries.", true);
+				if (queries.length === 0) fail("No query provided. Use query or queries.");
 				const provider = normalizeProvider(params.provider);
 				const recencyFilter = normalizeRecency(params.recencyFilter);
 				onUpdate?.({ content: [{ type: "text", text: `Searching ${queries.length} quer${queries.length === 1 ? "y" : "ies"} via ${provider}...` }] });
@@ -49,15 +49,16 @@ export default function webAccess(pi: ExtensionAPI) {
 						{ signal },
 					)
 					: [];
+				signal?.throwIfAborted();
 				const record = cache.store({ kind: "search", queries: results, pages });
-				const failed = results.every((result) => result.error && result.hits.length === 0);
+				const failed = results.every((result) => result.error !== undefined && result.hits.length === 0);
+				if (failed) fail(formatRecordForModel(record));
 				return {
 					content: [{ type: "text" as const, text: formatRecordForModel(record) }],
 					details: { responseId: record.id, queries: results, pageCount: pages.length },
-					isError: failed,
 				};
 			} catch (err) {
-				return textResult(`Error: ${err instanceof Error ? err.message : String(err)}`, true);
+				fail(err);
 			}
 		},
 	});
@@ -80,19 +81,20 @@ export default function webAccess(pi: ExtensionAPI) {
 		async execute(_id, params, signal, onUpdate) {
 			try {
 				const urls = normalizeUrls(params.url, params.urls);
-				if (urls.length === 0) return textResult("Error: No URL provided.", true);
+				if (urls.length === 0) fail("No URL provided.");
 				const mode = normalizeMode(params.mode);
 				onUpdate?.({ content: [{ type: "text", text: `Fetching ${urls.length} URL(s)...` }] });
 				const pages = await fetchPages(urls, { mode, signal });
+				signal?.throwIfAborted();
 				const record = cache.store({ kind: "fetch", queries: [], pages });
-				const failed = pages.every((page) => page.error);
+				const failed = pages.every((page) => page.error !== undefined);
+				if (failed) fail(formatRecordForModel(record));
 				return {
 					content: [{ type: "text" as const, text: formatRecordForModel(record) }],
 					details: { responseId: record.id, pages: pages.map((page) => ({ url: page.url, finalUrl: page.finalUrl, error: page.error, chars: page.content.length })) },
-					isError: failed,
 				};
 			} catch (err) {
-				return textResult(`Error: ${err instanceof Error ? err.message : String(err)}`, true);
+				fail(err);
 			}
 		},
 	});
@@ -122,13 +124,13 @@ export default function webAccess(pi: ExtensionAPI) {
 		async execute(_id, params) {
 			try {
 				if (params.findText !== undefined && (params.offset !== undefined || params.limit !== undefined)) {
-					return textResult("findText cannot be combined with offset or limit.", true);
+					fail("findText cannot be combined with offset or limit.");
 				}
 				if (params.findMode !== undefined && params.findText === undefined) {
-					return textResult("findMode requires findText.", true);
+					fail("findMode requires findText.");
 				}
 				const record = cache.get(String(params.responseId));
-				if (!record) return textResult(`Error: No stored results for responseId ${params.responseId}.`, true);
+				if (!record) fail(`No stored results for responseId ${params.responseId}.`);
 				const selected = selectStoredText(record, {
 					query: optionalString(params.query),
 					queryIndex: optionalInt(params.queryIndex),
@@ -149,18 +151,17 @@ export default function webAccess(pi: ExtensionAPI) {
 					details: { responseId: record.id, label: selected.label, ...sliced },
 				};
 			} catch (err) {
-				return textResult(`Error: ${err instanceof Error ? err.message : String(err)}`, true);
+				fail(err);
 			}
 		},
 	});
 }
 
-function textResult(text: string, isError = false) {
-	return {
-		content: [{ type: "text" as const, text }],
-		details: isError ? { error: text } : {},
-		isError,
-	};
+// Pi marks execute() failures through rejected promises, not an isError field
+// on a returned value. Preserve useful errors and normalize non-Error throws.
+function fail(error: unknown): never {
+	if (error instanceof Error && error.message) throw error;
+	throw new Error(error instanceof Error ? error.name : String(error) || "Unknown error");
 }
 
 function uniqueUrls(urls: string[]): string[] {

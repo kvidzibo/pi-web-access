@@ -83,6 +83,7 @@ export function createCache(dir: string, limits: Partial<CacheLimits> = {}) {
 	}
 
 	function fileFor(id: string): string {
+		if (!isSafeId(id)) throw new Error(`Invalid cache id: ${id}`);
 		return join(dir, `${id}.json`);
 	}
 

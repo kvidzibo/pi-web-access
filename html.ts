@@ -52,76 +52,72 @@ export function parseDdgHtml(html: string): SearchHit[] {
 }
 
 export function parseExaMcpBody(body: string): SearchHit[] {
-	const dataLines = body.split("\n").filter((line) => line.startsWith("data:"));
-	let payloadText = "";
-	for (const line of dataLines) {
-		const payload = line.slice(5).trim();
-		if (!payload) continue;
-		try {
-			const parsed = JSON.parse(payload) as {
-				error?: { message?: string };
-				result?: { isError?: boolean; content?: Array<{ type?: string; text?: string }> };
-			};
-			if (parsed.error) throw new Error(parsed.error.message || "Exa MCP error");
-			if (parsed.result?.isError) {
-				const message = parsed.result.content?.find((item) => item.type === "text")?.text?.trim();
-				throw new Error(message || "Exa MCP returned an error");
-			}
-			const text = parsed.result?.content?.find((item) => item.type === "text" && item.text?.trim())?.text;
-			if (text) {
-				payloadText = text;
-				break;
-			}
-		} catch (err) {
-			if (err instanceof SyntaxError) continue;
-			throw err;
-		}
+	// SSE joins all data fields in an event with newlines, including pretty JSON.
+	const events = body.replace(/\r\n?/g, "\n").split("\n\n").map((event) => event.split("\n")
+		.filter((line) => line.startsWith("data:"))
+		.map((line) => line.slice(5).replace(/^ /, "")).join("\n")).filter(Boolean);
+	let sawContent = false;
+	for (const payload of events.length > 0 ? events : [body]) {
+		let parsed: {
+			error?: { message?: string };
+			result?: { isError?: boolean; content?: Array<{ type?: string; text?: string } | null> };
+		};
+		try { parsed = JSON.parse(payload); } catch { continue; }
+		if (!parsed || typeof parsed !== "object") continue;
+		if (parsed.error) throw new Error(parsed.error.message || "Exa MCP error");
+		const result = parsed.result;
+		const texts = Array.isArray(result?.content) ? result.content
+			.filter((item) => item?.type === "text" && typeof item.text === "string")
+			.map((item) => item!.text!.trim()).filter(Boolean) : [];
+		if (result?.isError) throw new Error(texts.join("\n") || "Exa MCP returned an error");
+		if (texts.length === 0) continue;
+		sawContent = true;
+		const parsedBlocks = texts.map(parseExaText).filter((hits): hits is SearchHit[] => hits !== undefined);
+		if (parsedBlocks.length > 0) return parsedBlocks.flat();
 	}
+	throw new Error(sawContent ? "Exa MCP returned no parseable results" : "Exa MCP returned empty content");
+}
 
-	if (!payloadText) {
-		try {
-			const parsed = JSON.parse(body) as {
-				error?: { message?: string };
-				result?: { content?: Array<{ type?: string; text?: string }> };
-			};
-			if (parsed.error) throw new Error(parsed.error.message || "Exa MCP error");
-			payloadText = parsed.result?.content?.find((item) => item.type === "text")?.text ?? "";
-		} catch (err) {
-			if (!(err instanceof SyntaxError)) throw err;
-		}
-	}
-	if (!payloadText) throw new Error("Exa MCP returned empty content");
-
+function parseExaText(payloadText: string): SearchHit[] | undefined {
 	try {
 		const json = JSON.parse(payloadText) as {
-			results?: Array<{ title?: string; url?: string; text?: string; highlights?: unknown }>;
+			results?: Array<{ title?: unknown; url?: unknown; text?: unknown; highlights?: unknown } | null>;
 		};
-		if (Array.isArray(json.results) && json.results.length > 0) {
-			return json.results
-				.filter((result) => typeof result.url === "string" && result.url.length > 0)
-				.map((result) => ({
-					title: result.title?.trim() || result.url || "",
-					url: result.url as string,
-					snippet: snippetFromExa(result.text, result.highlights),
-				}));
+		if (Array.isArray(json?.results)) {
+			return json.results.flatMap((result) => {
+				const url = httpUrl(result?.url);
+				return url ? [{
+					title: typeof result?.title === "string" ? result.title.trim() || url : url,
+					url,
+					snippet: snippetFromExa(result?.text, result?.highlights),
+				}] : [];
+			});
 		}
 	} catch {
-		// formatted text block
+		// Exa also returns formatted text instead of a JSON results array.
 	}
-
 	const blocks = payloadText.split(/(?=^Title: )/m).filter((block) => block.trim().length > 0);
 	const hits: SearchHit[] = [];
 	for (const block of blocks) {
 		const title = block.match(/^Title: (.+)/m)?.[1]?.trim() ?? "";
-		const url = block.match(/^URL: (.+)/m)?.[1]?.trim() ?? "";
+		const url = httpUrl(block.match(/^URL: (.+)/m)?.[1]);
 		if (!url) continue;
 		let snippet = "";
 		const textStart = block.indexOf("\nText: ");
 		if (textStart >= 0) snippet = block.slice(textStart + 7).replace(/\n---\s*$/, "").trim();
 		hits.push({ title: title || url, url, snippet: snippet.replace(/\s+/g, " ").trim().slice(0, 500) });
 	}
-	if (hits.length === 0) throw new Error("Exa MCP returned no parseable results");
-	return hits;
+	return hits.length > 0 ? hits : undefined;
+}
+
+function httpUrl(value: unknown): string | null {
+	if (typeof value !== "string") return null;
+	try {
+		const url = new URL(value);
+		return url.protocol === "http:" || url.protocol === "https:" ? value.trim() : null;
+	} catch {
+		return null;
+	}
 }
 
 function snippetFromExa(text: unknown, highlights: unknown): string {
