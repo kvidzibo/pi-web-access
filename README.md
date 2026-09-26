@@ -1,5 +1,7 @@
 # pi-web-access
 
+[npm](https://www.npmjs.com/package/@kvidzibo/pi-web-access) · [Pi package directory](https://pi.dev/packages/@kvidzibo/pi-web-access)
+
 Search the web, fetch pages as Markdown and inspect cached results from the [Pi coding agent](https://github.com/earendil-works/pi), without supplying search API keys. Revisit long results in chunks or find a passage without fetching the page again.
 
 No GitHub clone, PDF, video or curator UI.
