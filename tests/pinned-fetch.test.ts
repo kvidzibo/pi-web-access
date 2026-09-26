@@ -3,9 +3,10 @@ import { once } from "node:events";
 import net from "node:net";
 import { test, type TestContext } from "node:test";
 import { brotliCompressSync, deflateSync, gzipSync } from "node:zlib";
-import { fetchPage, readTextLimited } from "../fetch.ts";
-import { pinnedFetch } from "../ssrf.ts";
-import { MAX_FETCH_BYTES } from "../constants.ts";
+import { fetchPage } from "../src/pages.ts";
+import { readTextLimited } from "../src/network/body.ts";
+import { pinnedFetch } from "../src/network/transport.ts";
+import { MAX_FETCH_BYTES } from "../src/constants.ts";
 
 // Exercise the real HTTP callback without external network access. Only this
 // transport fixture connects to loopback; URL validation remains unchanged.

@@ -11,7 +11,7 @@ import { existsSync, mkdtempSync, rmSync, statSync, utimesSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { createCache, findPassages, formatRecordForModel, isSafeId, selectStoredText, sliceText } from "../cache.ts";
+import { createCache, findPassages, formatRecordForModel, isSafeId, selectStoredText, sliceText } from "../src/cache.ts";
 
 function tempDir(): string {
 	return mkdtempSync(join(tmpdir(), "web-access-cache-"));

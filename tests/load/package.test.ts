@@ -6,7 +6,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { test } from "node:test";
 
-const REPO = dirname(fileURLToPath(import.meta.url));
+const REPO = fileURLToPath(new URL("../../", import.meta.url));
 const MANIFEST = join(REPO, "package.json");
 
 type LoadResult = {

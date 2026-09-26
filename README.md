@@ -51,7 +51,7 @@ The tool sequence is **search → fetch → inspect the cached text**:
 
 Replace the placeholder with the actual `responseId`. These are example arguments, not captured results. Search and fetch need public network access; the final lookup reads the local cache, whose entries expire after one hour. Provider availability and limits still apply even without API keys.
 
-**Design trade-off:** HTTP fetching and Readability extraction avoid launching a browser, but do not execute page JavaScript. Use [pi-browser](https://github.com/kvidzibo/pi-browser) when content needs interaction or rendering. See [fetch handling](fetch.ts), [HTML extraction](html.ts) and [extraction tests](tests/html.test.ts).
+**Design trade-off:** HTTP fetching and Readability extraction avoid launching a browser, but do not execute page JavaScript. Use [pi-browser](https://github.com/kvidzibo/pi-browser) when content needs interaction or rendering. See [fetch handling](src/pages.ts), [HTML extraction](src/html.ts) and [extraction tests](tests/html.test.ts).
 
 ## Install
 
@@ -102,7 +102,9 @@ A failed query no longer discards successful queries from the same batch. A prov
 
 Caps: 128 entries, 128 MiB. Case-insensitive and fuzzy match offsets refer to the original UTF-16 text, even when Unicode lowercasing changes its length.
 
-## Tests
+## Development
+
+`index.ts` is the Pi entry point; `src/tools.ts` registers tools. Search providers and fallback live in `src/search/`; URL policy, pinned transport, redirects, and bounded body reading are separated in `src/network/`. Page extraction and caching live in `src/pages.ts`, `src/html.ts`, and `src/cache.ts`. Tests are in `tests/`, with Pi loader checks in `tests/load/`.
 
 ```bash
 npm test          # unit + factory load (needs `pi` on PATH)

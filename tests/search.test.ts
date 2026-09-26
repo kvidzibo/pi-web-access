@@ -15,7 +15,7 @@ import {
 	searchDuckDuckGo,
 	searchExa,
 	searchQueries,
-} from "../search.ts";
+} from "../src/search/index.ts";
 
 test("normalizeQueries drops blanks and dupes", () => {
 	assert.deepEqual(normalizeQueries("  rust  ", ["rust", "", "go"]), ["rust", "go"]);

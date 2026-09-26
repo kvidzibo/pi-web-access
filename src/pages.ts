@@ -1,6 +1,9 @@
 import { CONCURRENT_FETCHES, FETCH_TIMEOUT_MS, MAX_FETCH_BYTES, MAX_URLS, MAX_URL_CHARS, USER_AGENT } from "./constants.ts";
 import { htmlToReadable } from "./html.ts";
-import { cancelBody, fetchRemoteUrl, type Lookup } from "./ssrf.ts";
+import { readTextLimited } from "./network/body.ts";
+import { fetchRemoteUrl } from "./network/fetch.ts";
+import type { Lookup } from "./network/policy.ts";
+import { cancelBody } from "./network/transport.ts";
 import type { FetchMode, PageResult } from "./types.ts";
 import { normalizeList, withTimeout } from "./utils.ts";
 
@@ -48,49 +51,24 @@ export async function fetchPage(url: string, options: FetchPageOptions = {}): Pr
 			options.signal.throwIfAborted();
 		}
 		const contentType = response.headers.get("content-type") || "";
+		const page: PageResult = { url, finalUrl: finalUrl.toString(), title: "", content: "", contentType };
 		if (!response.ok) {
 			await cancelBody(response);
 			options.signal?.throwIfAborted();
-			return {
-				url,
-				finalUrl: finalUrl.toString(),
-				title: "",
-				content: "",
-				contentType,
-				error: `HTTP ${response.status} ${response.statusText}`.trim(),
-			};
+			return { ...page, error: `HTTP ${response.status} ${response.statusText}`.trim() };
 		}
 		if (isBinaryType(contentType)) {
 			await cancelBody(response);
 			options.signal?.throwIfAborted();
-			return {
-				url,
-				finalUrl: finalUrl.toString(),
-				title: "",
-				content: "",
-				contentType,
-				error: `Unsupported content type: ${contentType || "unknown"}`,
-			};
+			return { ...page, error: `Unsupported content type: ${contentType || "unknown"}` };
 		}
 		const text = await readTextLimited(response, options.maxBytes ?? MAX_FETCH_BYTES);
 		options.signal?.throwIfAborted();
 		if (mode === "raw" || !isHtml(contentType, text)) {
-			return {
-				url,
-				finalUrl: finalUrl.toString(),
-				title: "",
-				content: text,
-				contentType,
-			};
+			return { ...page, content: text };
 		}
-		const readable = htmlToReadable(text, finalUrl.toString());
-		return {
-			url,
-			finalUrl: finalUrl.toString(),
-			title: readable.title,
-			content: readable.content,
-			contentType,
-		};
+		const readable = htmlToReadable(text, page.finalUrl);
+		return { ...page, title: readable.title, content: readable.content };
 	} catch (err) {
 		options.signal?.throwIfAborted();
 		return {
@@ -101,34 +79,6 @@ export async function fetchPage(url: string, options: FetchPageOptions = {}): Pr
 			contentType: "",
 			error: err instanceof Error ? err.message || err.name : String(err) || "Unknown error",
 		};
-	}
-}
-
-export async function readTextLimited(response: Response, maxBytes: number): Promise<string> {
-	const declared = Number(response.headers.get("content-length"));
-	if (Number.isFinite(declared) && declared > maxBytes) {
-		await cancelBody(response);
-		throw new Error(`Response too large (${declared} bytes)`);
-	}
-	if (!response.body) return "";
-	const reader = response.body.getReader();
-	const chunks: Uint8Array[] = [];
-	let size = 0;
-	try {
-		while (true) {
-			const { done, value } = await reader.read();
-			if (done) break;
-			if (!value) continue;
-			size += value.byteLength;
-			if (size > maxBytes) throw new Error(`Response too large (>${maxBytes} bytes)`);
-			chunks.push(value);
-		}
-		return Buffer.concat(chunks.map((chunk) => Buffer.from(chunk))).toString("utf8");
-	} catch (err) {
-		try { await reader.cancel(); } catch { /* Preserve the original read/size error. */ }
-		throw err;
-	} finally {
-		reader.releaseLock();
 	}
 }
 

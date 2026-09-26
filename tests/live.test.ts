@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { fetchPage } from "../fetch.ts";
-import { searchExa } from "../search.ts";
+import { fetchPage } from "../src/pages.ts";
+import { searchExa } from "../src/search/index.ts";
 
 const live = process.env.WEB_ACCESS_LIVE === "1";
 
