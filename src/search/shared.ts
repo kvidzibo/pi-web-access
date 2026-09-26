@@ -1,5 +1,5 @@
 import { MAX_SEARCH_BODY_BYTES, SEARCH_TIMEOUT_MS } from "../constants.ts";
-import { readTextLimited } from "../pages.ts";
+import { readTextLimited } from "../network/body.ts";
 import { fetchRemoteUrl } from "../network/fetch.ts";
 import type { RecencyFilter, SearchHit } from "../types.ts";
 import { withTimeout } from "../utils.ts";

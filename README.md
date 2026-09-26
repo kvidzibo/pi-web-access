@@ -104,7 +104,7 @@ Caps: 128 entries, 128 MiB. Case-insensitive and fuzzy match offsets refer to th
 
 ## Development
 
-`index.ts` is the Pi entry point; `src/tools.ts` registers tools. Search providers and fallback live in `src/search/`; URL policy, pinned transport, and redirects are separated in `src/network/`. Page extraction and caching live in `src/pages.ts`, `src/html.ts`, and `src/cache.ts`. Tests are in `tests/`, with Pi loader checks in `tests/load/`.
+`index.ts` is the Pi entry point; `src/tools.ts` registers tools. Search providers and fallback live in `src/search/`; URL policy, pinned transport, redirects, and bounded body reading are separated in `src/network/`. Page extraction and caching live in `src/pages.ts`, `src/html.ts`, and `src/cache.ts`. Tests are in `tests/`, with Pi loader checks in `tests/load/`.
 
 ```bash
 npm test          # unit + factory load (needs `pi` on PATH)

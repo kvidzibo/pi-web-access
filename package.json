@@ -1,6 +1,6 @@
 {
   "name": "@kvidzibo/pi-web-access",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Pi package: keyless Exa/DuckDuckGo search + local URL fetch",
   "author": "Tomas Rackauskas",
   "keywords": ["pi-package"],

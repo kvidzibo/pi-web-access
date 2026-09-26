@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { normalizeList, withTimeout } from "../src/utils.ts";
-import { readTextLimited } from "../src/pages.ts";
+import { readTextLimited } from "../src/network/body.ts";
 
 test("normalization preserves array precedence, order, cap and error wording", () => {
 	assert.deepEqual(normalizeList("ignored", [" b ", null, "", "b", "a", "too long"], "Query", 3, 2), ["b", "a"]);
