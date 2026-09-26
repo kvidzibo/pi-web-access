@@ -1,4 +1,0 @@
-- HTTP-to-Fetch adapters must catch errors inside asynchronous response callbacks: the Promise executor cannot catch them. Reject and close unused streams/sockets, use null bodies for HEAD/204/205/304, and verify with real loopback transport tests.
-- Decoder cleanup tests should keep the upstream HTTP body incomplete: a fully consumed response may already have returned its socket to the keep-alive pool, so socket closure is not required in that case. Assert body rejection separately from connection cleanup.
-- Node HTTP/body AbortErrors can wrap TimeoutError. Normalize errors from the request signal at the provider boundary; only the caller signal cancels the whole batch, while provider deadlines remain per-query failures.
-- Preserve original UTF-16 offsets through Unicode lowercasing: İ expands into two code units. Lowercase whole strings for contextual mappings, then map search positions back before slicing original text.
