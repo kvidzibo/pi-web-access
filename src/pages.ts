@@ -1,6 +1,8 @@
 import { CONCURRENT_FETCHES, FETCH_TIMEOUT_MS, MAX_FETCH_BYTES, MAX_URLS, MAX_URL_CHARS, USER_AGENT } from "./constants.ts";
 import { htmlToReadable } from "./html.ts";
-import { cancelBody, fetchRemoteUrl, type Lookup } from "./ssrf.ts";
+import { fetchRemoteUrl } from "./network/fetch.ts";
+import type { Lookup } from "./network/policy.ts";
+import { cancelBody } from "./network/transport.ts";
 import type { FetchMode, PageResult } from "./types.ts";
 import { normalizeList, withTimeout } from "./utils.ts";
 

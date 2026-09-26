@@ -14,7 +14,7 @@ test("invalid base falls back to the final page URL", () => {
 	assert.match(result.content, /https:\/\/example.com\/next/);
 });
 import { test } from "node:test";
-import { decodeDdgUrl, htmlToReadable, parseDdgHtml, parseExaMcpBody } from "../html.ts";
+import { decodeDdgUrl, htmlToReadable, parseDdgHtml, parseExaMcpBody } from "../src/html.ts";
 
 test("htmlToReadable extracts article", () => {
 	const html = `<!doctype html><html><head><title>Ignore</title></head><body>

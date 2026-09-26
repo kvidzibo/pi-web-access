@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { fetchPage, fetchPages, normalizeMode, normalizeUrls, readTextLimited } from "../fetch.ts";
+import { fetchPage, fetchPages, normalizeMode, normalizeUrls, readTextLimited } from "../src/pages.ts";
 
 const publicLookup = async () => [{ address: "93.184.216.34", family: 4 }];
 

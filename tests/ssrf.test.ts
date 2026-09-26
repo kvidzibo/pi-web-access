@@ -1,15 +1,15 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { fetchRemoteUrl } from "../src/network/fetch.ts";
+import { pinnedConnectOptions } from "../src/network/transport.ts";
 import {
-	fetchRemoteUrl,
 	isBlockedAddress,
 	isBlockedIPv4,
 	isBlockedIPv6,
 	looksLikeNonCanonicalIp,
-	pinnedConnectOptions,
 	resolvePinnedTarget,
 	validateRemoteUrl,
-} from "../ssrf.ts";
+} from "../src/network/policy.ts";
 
 test("blocks loopback and RFC1918 IPv4", () => {
 	assert.equal(isBlockedIPv4("127.0.0.1"), true);

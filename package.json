@@ -20,7 +20,7 @@
   "scripts": {
     "test": "npm run test:unit && npm run test:load",
     "test:unit": "node --test --experimental-strip-types tests/*.test.ts",
-    "test:load": "node --test --experimental-strip-types load.test.ts"
+    "test:load": "node --test --experimental-strip-types tests/load/*.test.ts"
   },
   "dependencies": {
     "@mozilla/readability": "^0.6.0",
@@ -28,15 +28,8 @@
     "turndown": "^7.2.0"
   },
   "files": [
-    "cache.ts",
-    "constants.ts",
-    "fetch.ts",
-    "html.ts",
     "index.ts",
-    "search.ts",
-    "ssrf.ts",
-    "types.ts",
-    "utils.ts",
+    "src/",
     "LICENSE",
     "README.md"
   ],
