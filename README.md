@@ -135,6 +135,10 @@ Readable Markdown resolves relative links and image sources against the final fe
 
 ## Search and errors
 
+Use `queries` for batches of up to 4 searches (500 characters per query), or
+`urls` for up to 20 fetched URLs (2,048 characters per URL). `numResults` accepts
+1–20 results per query, defaulting to 5.
+
 Domain filters are sent to both providers and enforced on returned URLs; multiple allowed domains use OR. DuckDuckGo uses its date filter for `recencyFilter`; Exa receives a relative-date query hint, not a guaranteed date constraint. Empty matching results are identified explicitly.
 
 A failed query no longer discards successful queries from the same batch. A provider timeout ends that query without fallback; later queries still run. Caller cancellation stops the batch and does not cache canceled results. All-failed batches and invalid tool arguments throw errors in Pi (MCP returns `isError: true`); partial results remain available. All-failed batch errors include a cache response ID for inspection with `get_search_content`.
@@ -142,6 +146,9 @@ A failed query no longer discards successful queries from the same batch. A prov
 ## Cache
 
 `~/.pi/agent/web-access-cache` (dir 0700, files 0600). Entries expire after 1 hour. Expired and over-quota files are deleted when the server/extension loads and on store/get. Inactive leftover files can remain until the next load.
+
+`get_search_content` returns up to 30,000 characters per page; use `offset` and
+`limit` to continue. To search instead, pass `findText` without `offset` or `limit`.
 
 Caps: 128 entries, 128 MiB. Case-insensitive and fuzzy match offsets refer to the original UTF-16 text, even when Unicode lowercasing changes its length.
 
