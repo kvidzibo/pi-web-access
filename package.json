@@ -1,9 +1,19 @@
 {
   "name": "@kvidzibo/pi-web-access",
-  "version": "0.1.1",
-  "description": "Pi package: keyless Exa/DuckDuckGo search + local URL fetch",
+  "version": "0.2.0",
+  "description": "MCP server and Pi package: keyless web search, URL fetch, and cached content",
   "author": "Tomas Rackauskas",
-  "keywords": ["pi-package"],
+  "keywords": [
+    "pi-package",
+    "mcp",
+    "web-search"
+  ],
+  "bin": {
+    "pi-web-access-mcp": "./mcp/cli.mjs"
+  },
+  "engines": {
+    "node": ">=22.18.0"
+  },
   "license": "MIT",
   "type": "module",
   "repository": {
@@ -15,26 +25,42 @@
     "url": "https://github.com/kvidzibo/pi-web-access/issues"
   },
   "pi": {
-    "extensions": ["./index.ts"]
+    "extensions": [
+      "./index.ts"
+    ]
   },
   "scripts": {
-    "test": "npm run test:unit && npm run test:load",
+    "build": "esbuild mcp/server.mjs --bundle --platform=node --format=esm --packages=external --outfile=dist-mcp/server.mjs",
+    "prepack": "npm run build",
+    "test": "npm run test:unit && npm run test:mcp && npm run test:load",
+    "test:mcp": "npm run build && node --test --experimental-strip-types tests/mcp/*.test.ts",
     "test:unit": "node --test --experimental-strip-types tests/*.test.ts",
     "test:load": "node --test --experimental-strip-types tests/load/*.test.ts"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.1",
     "@mozilla/readability": "^0.6.0",
     "linkedom": "^0.16.0",
-    "turndown": "^7.2.0"
+    "turndown": "^7.2.0",
+    "typebox": "^1.4.1"
   },
   "files": [
     "index.ts",
     "src/",
     "LICENSE",
-    "README.md"
+    "README.md",
+    "mcp/",
+    "dist-mcp/"
   ],
   "peerDependencies": {
-    "@earendil-works/pi-coding-agent": "*",
-    "typebox": "*"
+    "@earendil-works/pi-coding-agent": "*"
+  },
+  "peerDependenciesMeta": {
+    "@earendil-works/pi-coding-agent": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.12"
   }
 }

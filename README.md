@@ -2,7 +2,7 @@
 
 [npm](https://www.npmjs.com/package/@kvidzibo/pi-web-access) · [Pi package directory](https://pi.dev/packages/@kvidzibo/pi-web-access)
 
-Search the web, fetch pages as Markdown and inspect cached results from the [Pi coding agent](https://github.com/earendil-works/pi), without supplying search API keys. Revisit long results in chunks or find a passage without fetching the page again.
+Search the web, fetch pages as Markdown and inspect cached results from any MCP client or the [Pi coding agent](https://github.com/earendil-works/pi), without supplying search API keys. Revisit long results in chunks or find a passage without fetching the page again.
 
 No GitHub clone, PDF, video or curator UI.
 
@@ -12,7 +12,7 @@ No GitHub clone, PDF, video or curator UI.
 | `fetch_content` | this machine GETs the URL, Readability → markdown |
 | `get_search_content` | page/find cached full text |
 
-> **Security:** Pi packages run with your full system permissions. Search and content requests hit the public internet from this machine. A local SSRF gate blocks private/loopback/link-local/special-use IPs, URL credentials, and non-http(s), rechecks every redirect, and pins DNS lookup to the connecting socket (no second resolve). Install only from a source you trust.
+> **Security:** MCP servers and Pi packages run with your full system permissions. Search and content requests hit the public internet from this machine. A local SSRF gate blocks private/loopback/link-local/special-use IPs, URL credentials, and non-http(s), rechecks every redirect, and pins DNS lookup to the connecting socket (no second resolve). Install only from a source you trust.
 
 ## Quick example
 
@@ -53,7 +53,50 @@ Replace the placeholder with the actual `responseId`. These are example argument
 
 **Design trade-off:** HTTP fetching and Readability extraction avoid launching a browser, but do not execute page JavaScript. Use [pi-browser](https://github.com/kvidzibo/pi-browser) when content needs interaction or rendering. See [fetch handling](src/pages.ts), [HTML extraction](src/html.ts) and [extraction tests](tests/html.test.ts).
 
-## Install
+## MCP server and gateway
+
+Requires **Node.js 22.18+**; no Pi installation is needed. Published npm packages include the compiled server. Build local checkouts once:
+
+```bash
+cd /absolute/path/to/pi-web-access
+npm ci --omit=peer
+npm run build
+node mcp/cli.mjs
+```
+
+The process speaks MCP over stdio, not an interactive CLI. stdout is protocol-only.
+The npm package also provides the `pi-web-access-mcp` executable.
+
+Merge this entry into your gateway's existing `mcpServers` map, preserving other services:
+
+```json
+{
+  "web": {
+    "command": "node",
+    "args": ["/absolute/path/to/pi-web-access/mcp/cli.mjs"]
+  }
+}
+```
+
+For the [local stdio MCP gateway](https://github.com/kvidzibo/MCP), set
+`"timeoutMs": 300000` at the **top level** of the gateway configuration, not inside
+the service entry, to allow multi-query searches to finish. This gateway-specific
+option applies to all services; omit it for clients that do not support it.
+The gateway exposes `web__web_search`, `web__fetch_content`, and
+`web__get_search_content` through `gateway_tools` / `gateway_call`.
+Other MCP clients can launch the same command directly.
+
+When migrating Pi, remove this package from Pi's `settings.json` `packages`
+(and any explicit `extensions` entry) to avoid duplicate tools. Keep the checkout
+and its dependencies. After active gateway jobs finish, run `/reload` or restart
+the client. Reloading stops that session's gateway and its children.
+
+MCP uses the same schemas, search/fetch logic, SSRF protections, and disk cache
+as the optional Pi extension. Successful results include `structuredContent`
+with response IDs/metadata; execution and argument failures return `isError: true`.
+Tool descriptions retain the search/fetch/cache usage guidance.
+
+## Install as a Pi extension
 
 This README tracks repository source. npm packages and Git tags may be behind it; check the version you install before relying on newer features.
 
@@ -75,7 +118,7 @@ npm install --omit=peer
 pi install /absolute/path/to/pi-web-access
 ```
 
-`pi install` of **npm or git** sources runs `npm install` for runtime deps (`@mozilla/readability`, `linkedom`, `turndown`). Pi supplies `@earendil-works/*` and `typebox`.
+`pi install` of **npm or git** sources runs `npm install` for runtime dependencies, including the MCP SDK, HTML extraction libraries, and TypeBox. Pi supplies `@earendil-works/*`; `typebox` is a runtime dependency. Pi is an optional peer dependency for MCP-only installs.
 
 Do **not** also list this path in `settings.json` `extensions` — package load is enough.
 
@@ -94,24 +137,25 @@ Readable Markdown resolves relative links and image sources against the final fe
 
 Domain filters are sent to both providers and enforced on returned URLs; multiple allowed domains use OR. DuckDuckGo uses its date filter for `recencyFilter`; Exa receives a relative-date query hint, not a guaranteed date constraint. Empty matching results are identified explicitly.
 
-A failed query no longer discards successful queries from the same batch. A provider timeout ends that query without fallback; later queries still run. Caller cancellation stops the batch and does not cache canceled results. All-failed batches and invalid tool arguments throw errors as required by Pi; partial results remain available. All-failed batch errors include a cache response ID for inspection with `get_search_content`.
+A failed query no longer discards successful queries from the same batch. A provider timeout ends that query without fallback; later queries still run. Caller cancellation stops the batch and does not cache canceled results. All-failed batches and invalid tool arguments throw errors in Pi (MCP returns `isError: true`); partial results remain available. All-failed batch errors include a cache response ID for inspection with `get_search_content`.
 
 ## Cache
 
-`~/.pi/agent/web-access-cache` (dir 0700, files 0600). Entries expire after 1 hour. Expired and over-quota files are deleted when the extension loads and on store/get. Inactive leftover files can remain until the next load.
+`~/.pi/agent/web-access-cache` (dir 0700, files 0600). Entries expire after 1 hour. Expired and over-quota files are deleted when the server/extension loads and on store/get. Inactive leftover files can remain until the next load.
 
 Caps: 128 entries, 128 MiB. Case-insensitive and fuzzy match offsets refer to the original UTF-16 text, even when Unicode lowercasing changes its length.
 
 ## Development
 
-`index.ts` is the Pi entry point; `src/tools.ts` registers tools. Search providers and fallback live in `src/search/`; URL policy, pinned transport, redirects, and bounded body reading are separated in `src/network/`. Page extraction and caching live in `src/pages.ts`, `src/html.ts`, and `src/cache.ts`. Tests are in `tests/`, with Pi loader checks in `tests/load/`.
+`mcp/cli.mjs` is the stdio MCP entry point; `mcp/server.mjs` adapts the shared tool definitions and bundles into `dist-mcp/server.mjs` (so npm installs do not need Node to strip TypeScript inside `node_modules`). `index.ts` is the optional Pi entry point; `src/tools.ts` registers tools. Search providers and fallback live in `src/search/`; URL policy, pinned transport, redirects, and bounded body reading are separated in `src/network/`. Page extraction and caching live in `src/pages.ts`, `src/html.ts`, and `src/cache.ts`. Tests are in `tests/`, with Pi loader checks in `tests/load/`.
 
 ```bash
-npm test          # unit + factory load (needs `pi` on PATH)
-npm run test:unit # no Pi required; this is what CI runs
+npm test          # unit + MCP + factory load (needs `pi` on PATH)
+npm run test:unit # no Pi required
+npm run test:mcp  # real stdio MCP client/server; no Pi or network required
 ```
 
-The default suite uses fixtures and loopback servers, never the public network. Optional live smoke:
+CI runs the unit and MCP suites. The default suite uses fixtures and loopback servers, never the public network. Optional live smoke:
 
 ```bash
 WEB_ACCESS_LIVE=1 node --test --experimental-strip-types tests/live.test.ts
