@@ -16,7 +16,7 @@ No GitHub clone, PDF, video or curator UI.
 
 ## Quick example
 
-After [installing](#install), ask Pi:
+After [installing](#install-as-a-pi-extension), ask Pi:
 
 ```text
 Search nodejs.org for the Node.js test runner documentation.
