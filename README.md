@@ -73,14 +73,15 @@ Merge this entry into your gateway's existing `mcpServers` map, preserving other
 {
   "web": {
     "command": "node",
-    "args": ["/absolute/path/to/pi-web-access/mcp/cli.mjs"],
-    "timeoutMs": 300000
+    "args": ["/absolute/path/to/pi-web-access/mcp/cli.mjs"]
   }
 }
 ```
 
-`timeoutMs` is specific to the [local stdio MCP gateway](https://github.com/kvidzibo/MCP).
-It allows multi-query searches to finish; omit it for clients that do not support it.
+For the [local stdio MCP gateway](https://github.com/kvidzibo/MCP), set
+`"timeoutMs": 300000` at the **top level** of the gateway configuration, not inside
+the service entry, to allow multi-query searches to finish. This gateway-specific
+option applies to all services; omit it for clients that do not support it.
 The gateway exposes `web__web_search`, `web__fetch_content`, and
 `web__get_search_content` through `gateway_tools` / `gateway_call`.
 Other MCP clients can launch the same command directly.
