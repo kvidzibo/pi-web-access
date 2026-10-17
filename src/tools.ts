@@ -10,7 +10,7 @@ import type { FindMode } from "./types.ts";
 
 const cache = createCache(join(homedir(), ".pi", "agent", "web-access-cache"));
 
-export default function webAccess(pi: ExtensionAPI) {
+export default function webAccess(pi: Pick<ExtensionAPI, "registerTool">) {
 	pi.registerTool({
 		name: "web_search",
 		label: "Web Search",
@@ -102,7 +102,7 @@ export default function webAccess(pi: ExtensionAPI) {
 	pi.registerTool({
 		name: "get_search_content",
 		label: "Get Search Content",
-		description: "Retrieve stored content from a previous web_search or fetch_content call via responseId. Cache dir ~/.pi/agent/web-access-cache; entries expire after 1 hour and are pruned on extension load and on store/get.",
+		description: "Retrieve stored content from a previous web_search or fetch_content call via responseId. Cache dir ~/.pi/agent/web-access-cache; entries expire after 1 hour and are pruned on server/extension load and on store/get.",
 		promptSnippet: "Use get_search_content after web_search or fetch_content to page or findText in stored content.",
 		promptGuidelines: [
 			"Use get_search_content with a responseId from web_search or fetch_content. Use findText to locate passages. Do not combine findText with offset or limit.",
