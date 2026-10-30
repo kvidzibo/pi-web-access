@@ -17,11 +17,9 @@ jobs:
         with:
           node-version: "22"
           registry-url: "https://registry.npmjs.org"
-      # Install with Node 22's bundled npm. npm@latest's `npm ci` rejects this
-      # lockfile (peer tree + hasShrinkwrap) even with --omit=peer.
       - run: npm ci --omit=peer
-      # Factory load (npm run test:load) needs `pi` on PATH; not available here.
-      - run: npm run test:unit
+      - run: npm install --global --ignore-scripts --omit=peer @earendil-works/pi-coding-agent@1.4.0
+      - run: npm test
       - name: Publish if version is new
         run: |
           set -euo pipefail

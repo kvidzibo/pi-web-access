@@ -48,10 +48,15 @@ test("package manifest factory-loads web-access tools and signals errors by thro
 		pi?: { extensions?: string[] };
 		dependencies?: Record<string, string>;
 		peerDependencies?: Record<string, string>;
+		files?: string[];
+		bin?: unknown;
 	};
 	assert.deepEqual(pkg.pi?.extensions, ["./index.ts"]);
 	assert.equal(pkg.dependencies?.typebox, undefined, "Pi must supply its own TypeBox runtime");
 	assert.equal(pkg.peerDependencies?.typebox, "*");
+	assert.equal(pkg.bin, undefined, "native package must not expose an MCP executable");
+	assert.equal(pkg.dependencies?.["@modelcontextprotocol/sdk"], undefined);
+	assert.ok(!pkg.files?.some((path) => /^(?:mcp|dist-mcp)(?:\/|$)/.test(path)));
 	const paths = (pkg.pi?.extensions ?? []).map((rel) => join(REPO, rel));
 	const result = await loadWithPi(paths);
 	assert.deepEqual(
