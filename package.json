@@ -1,18 +1,14 @@
 {
   "name": "@kvidzibo/pi-web-access",
-  "version": "0.2.1",
-  "description": "MCP server and Pi package: keyless web search, URL fetch, and cached content",
+  "version": "0.3.0",
+  "description": "Native Pi extension for keyless web search, URL fetching, and cached content",
   "author": "Tomas Rackauskas",
   "keywords": [
     "pi-package",
-    "mcp",
     "web-search"
   ],
-  "bin": {
-    "pi-web-access-mcp": "./mcp/cli.mjs"
-  },
   "engines": {
-    "node": ">=22.18.0"
+    "node": ">=22.19.0"
   },
   "license": "MIT",
   "type": "module",
@@ -30,37 +26,31 @@
     ]
   },
   "scripts": {
-    "build": "esbuild mcp/server.mjs --bundle --platform=node --format=esm --packages=external --outfile=dist-mcp/server.mjs",
-    "prepack": "npm run build",
-    "test": "npm run test:unit && npm run test:mcp && npm run test:load",
-    "test:mcp": "npm run build && node --test --experimental-strip-types tests/mcp/*.test.ts",
+    "test": "npm run test:unit && npm run test:load",
     "test:unit": "node --test --experimental-strip-types tests/*.test.ts",
     "test:load": "node --test --experimental-strip-types tests/load/*.test.ts"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.32.1",
     "@mozilla/readability": "^0.6.0",
     "linkedom": "^0.16.0",
-    "turndown": "^7.2.0",
-    "typebox": "^1.4.1"
+    "turndown": "^7.2.0"
   },
   "files": [
     "index.ts",
     "src/",
     "LICENSE",
-    "README.md",
-    "mcp/",
-    "dist-mcp/"
+    "README.md"
   ],
   "peerDependencies": {
-    "@earendil-works/pi-coding-agent": "*"
+    "@earendil-works/pi-coding-agent": "*",
+    "typebox": "*"
   },
   "peerDependenciesMeta": {
     "@earendil-works/pi-coding-agent": {
       "optional": true
+    },
+    "typebox": {
+      "optional": true
     }
-  },
-  "devDependencies": {
-    "esbuild": "^0.25.12"
   }
 }
