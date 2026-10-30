@@ -118,7 +118,11 @@ npm install --omit=peer
 pi install /absolute/path/to/pi-web-access
 ```
 
-`pi install` of **npm or git** sources runs `npm install` for runtime dependencies, including the MCP SDK, HTML extraction libraries, and TypeBox. Pi supplies `@earendil-works/*`; `typebox` is a runtime dependency. Pi is an optional peer dependency for MCP-only installs.
+`pi install` of **npm or git** sources runs `npm install` for runtime dependencies,
+including the MCP SDK and HTML extraction libraries. Pi supplies
+`@earendil-works/*` and `typebox`; both are optional peers for MCP-only installs.
+The compiled MCP server bundles TypeBox, so production installs need no separate
+TypeBox package. Building a local checkout requires development dependencies.
 
 Do **not** also list this path in `settings.json` `extensions` — package load is enough.
 
@@ -154,7 +158,7 @@ Caps: 128 entries, 128 MiB. Case-insensitive and fuzzy match offsets refer to th
 
 ## Development
 
-`mcp/cli.mjs` is the stdio MCP entry point; `mcp/server.mjs` adapts the shared tool definitions and bundles into `dist-mcp/server.mjs` (so npm installs do not need Node to strip TypeScript inside `node_modules`). `index.ts` is the optional Pi entry point; `src/tools.ts` registers tools. Search providers and fallback live in `src/search/`; URL policy, pinned transport, redirects, and bounded body reading are separated in `src/network/`. Page extraction and caching live in `src/pages.ts`, `src/html.ts`, and `src/cache.ts`. Tests are in `tests/`, with Pi loader checks in `tests/load/`.
+`mcp/cli.mjs` is the stdio MCP entry point; `mcp/server.mjs` adapts the shared tool definitions and bundles them with TypeBox into `dist-mcp/server.mjs` (so npm installs need neither a separate TypeBox runtime nor Node stripping TypeScript inside `node_modules`). `index.ts` is the optional Pi entry point; `src/tools.ts` registers tools. Search providers and fallback live in `src/search/`; URL policy, pinned transport, redirects, and bounded body reading are separated in `src/network/`. Page extraction and caching live in `src/pages.ts`, `src/html.ts`, and `src/cache.ts`. Tests are in `tests/`, with Pi loader checks in `tests/load/`.
 
 ```bash
 npm test          # unit + MCP + factory load (needs `pi` on PATH)

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -9,6 +9,8 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 import { createCache } from "../../src/cache.ts";
 
 test("stdio MCP exposes shared tools, validates calls, preserves errors and cached content", { timeout: 15000 }, async (t) => {
+	const bundle = readFileSync(new URL("../../dist-mcp/server.mjs", import.meta.url), "utf8");
+	assert.doesNotMatch(bundle, /(?:from\s*|import\s*\(|require\s*\()\s*["']typebox(?:["'/])/, "MCP must bundle TypeBox for production-only installs");
 	const home = mkdtempSync(join(tmpdir(), "web-access-mcp-"));
 	const cache = createCache(join(home, ".pi", "agent", "web-access-cache"));
 	const record = cache.store({
